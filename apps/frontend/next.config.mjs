@@ -26,10 +26,20 @@ const nextConfig = {
       { protocol: "https", hostname: "res.cloudinary.com" }
     ]
   },
-  /** Appels `/api/*` depuis le navigateur → backend réel (évite CORS et URLs cassées). */
+  /**
+   * Proxy vers le backend Express : après les routes locales (`app/api/upload`, etc.).
+   * évite un 404 Next sur `/api/auth/...` si la réécriture passait avant les handlers.
+   */
   async rewrites() {
     const base = upstreamForRewrites();
-    return [{ source: "/api/:path*", destination: `${base}/api/:path*` }];
+    return {
+      afterFiles: [
+        {
+          source: "/api/:path*",
+          destination: `${base}/api/:path*`
+        }
+      ]
+    };
   }
 };
 
