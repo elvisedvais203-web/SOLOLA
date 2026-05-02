@@ -14,7 +14,7 @@ import {
   RecaptchaVerifier
 } from "firebase/auth";
 import { auth } from "../../nextalkfirebase";
-import api from "../../lib/nextalkapi";
+import { apiPostAuthWithResilience, prewarmClientApiBase } from "../../lib/nextalkapi";
 import { isLoggedIn, storeSession } from "../../lib/nextalksession";
 import { SololaThemedLogo } from "../../components/sololathemedlogo";
 
@@ -45,6 +45,11 @@ const FIREBASE_CONFIGURED = Boolean(
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
     process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 );
+
+/** Aligné sur AUTH_FIREBASE_ONLY côté API : uniquement Google, Apple, téléphone (Firebase). */
+const FIREBASE_AUTH_ONLY =
+  process.env.NEXT_PUBLIC_FIREBASE_AUTH_ONLY === "1" ||
+  process.env.NEXT_PUBLIC_FIREBASE_AUTH_ONLY === "true";
 
 type PhoneConfirmationResult = { confirm: (code: string) => Promise<any> };
 
@@ -178,6 +183,16 @@ export default function AuthClientSimple() {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    void prewarmClientApiBase();
+  }, []);
+
+  useEffect(() => {
+    if (FIREBASE_AUTH_ONLY) {
+      setTab("phone");
+    }
+  }, []);
+
   const getOrCreateRecaptchaVerifier = (): ApplicationVerifier | undefined => {
     try {
       // Essayer d'utiliser le verifier global si disponible
@@ -216,7 +231,7 @@ export default function AuthClientSimple() {
   const finishFirebaseUserSession = async (firebaseUser: User): Promise<boolean> => {
     try {
       const idToken = await firebaseUser.getIdToken(true);
-      const backend = await api.post("/auth/firebase/verify", {
+      const backend = await apiPostAuthWithResilience("/auth/firebase/verify", {
         idToken,
         displayName: firebaseUser.displayName ?? undefined
       });
@@ -357,7 +372,7 @@ export default function AuthClientSimple() {
       const credential = await confirmationResult.confirm(otpCode.trim());
       const idToken = await credential.user.getIdToken(true);
 
-      const backend = await api.post("/auth/firebase/verify", {
+      const backend = await apiPostAuthWithResilience("/auth/firebase/verify", {
         idToken,
         displayName: credential.user.displayName ?? undefined
       });
@@ -425,7 +440,7 @@ export default function AuthClientSimple() {
           setStatusType("error");
           return;
         }
-        const resp = await api.post("/auth/email/register", {
+        const resp = await apiPostAuthWithResilience("/auth/email/register", {
           email: email.trim(),
           password,
           displayName: displayName.trim() || undefined
@@ -442,7 +457,7 @@ export default function AuthClientSimple() {
       }
 
       if (authMode === "login") {
-        const resp = await api.post("/auth/email/login", {
+        const resp = await apiPostAuthWithResilience("/auth/email/login", {
           email: email.trim(),
           password
         });
@@ -462,7 +477,7 @@ export default function AuthClientSimple() {
       const net = e?.code === "ERR_NETWORK" || raw.toLowerCase().includes("network error");
       setStatus(
         net
-          ? "Connexion au serveur impossible. Vérifie ta connexion Internet, désactive le VPN ou le pare-feu qui bloquent, ou réessaie dans quelques minutes. Sur l’hébergeur du frontend, vérifie que NEXT_PUBLIC_API_URL pointe vers ton API (ex. https://ton-backend.onrender.com/api)."
+          ? "Le serveur n’a pas répondu après une seconde tentative. Vérifie ta connexion, puis réessaie. Côté hébergement (ex. Render), l’URL de l’API doit être correcte (variable API_PROXY_TARGET sur le service frontend = origine du backend, sans /api )."
           : (e?.response?.data?.message ?? raw) || "Erreur."
       );
       setStatusType("error");
@@ -544,12 +559,14 @@ export default function AuthClientSimple() {
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-[#10172b]">
-                    {authMode === "login" ? "Connexion" : "Inscription"}
+                    {FIREBASE_AUTH_ONLY ? "Connexion Solola" : authMode === "login" ? "Connexion" : "Inscription"}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-600">
-                    {authMode === "login"
-                      ? "Entre tes identifiants pour te connecter."
-                      : "Crée ton compte en quelques secondes."}
+                    {FIREBASE_AUTH_ONLY
+                      ? "Utilise Google, Apple ou ton numéro de téléphone (SMS)."
+                      : authMode === "login"
+                        ? "Entre tes identifiants pour te connecter."
+                        : "Crée ton compte en quelques secondes."}
                   </p>
                 </div>
                 <div className="hidden sm:block">
@@ -557,59 +574,63 @@ export default function AuthClientSimple() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("login");
-                    setStatus("");
-                  }}
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold ${
-                    authMode === "login" ? "bg-[#10172b] text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  }`}
-                >
-                  Se connecter
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("register");
-                    setStatus("");
-                  }}
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold ${
-                    authMode === "register" ? "bg-[#10172b] text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  }`}
-                >
-                  S’inscrire
-                </button>
-              </div>
+              {!FIREBASE_AUTH_ONLY ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("login");
+                      setStatus("");
+                    }}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold ${
+                      authMode === "login" ? "bg-[#10172b] text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    Se connecter
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("register");
+                      setStatus("");
+                    }}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold ${
+                      authMode === "register" ? "bg-[#10172b] text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    S’inscrire
+                  </button>
+                </div>
+              ) : null}
 
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab("email");
-                    setStatus("");
-                  }}
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold ${
-                    tab === "email" ? "border border-slate-200 bg-white text-[#10172b]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  }`}
-                >
-                  Email
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab("phone");
-                    setStatus("");
-                  }}
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold ${
-                    tab === "phone" ? "border border-slate-200 bg-white text-[#10172b]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  }`}
-                >
-                  Téléphone
-                </button>
-              </div>
+              {!FIREBASE_AUTH_ONLY ? (
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab("email");
+                      setStatus("");
+                    }}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold ${
+                      tab === "email" ? "border border-slate-200 bg-white text-[#10172b]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    Email
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab("phone");
+                      setStatus("");
+                    }}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold ${
+                      tab === "phone" ? "border border-slate-200 bg-white text-[#10172b]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    Téléphone
+                  </button>
+                </div>
+              ) : null}
 
               <div className="mt-4 space-y-3">
                 <div className="flex flex-col gap-2">
@@ -639,7 +660,7 @@ export default function AuthClientSimple() {
                   <span className="h-px flex-1 bg-slate-200" />
                 </div>
 
-          {tab === "phone" ? (
+          {tab === "phone" || FIREBASE_AUTH_ONLY ? (
             <>
               {!FIREBASE_CONFIGURED ? (
                 <div className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -816,10 +837,12 @@ export default function AuthClientSimple() {
 
               <div
                 className={`mt-3 flex items-center text-xs ${
-                  tab === "email" && authMode === "login" ? "justify-between" : "justify-end"
+                  !FIREBASE_AUTH_ONLY && tab === "email" && authMode === "login"
+                    ? "justify-between"
+                    : "justify-end"
                 }`}
               >
-                {tab === "email" && authMode === "login" ? (
+                {!FIREBASE_AUTH_ONLY && tab === "email" && authMode === "login" ? (
                   <Link
                     href="/auth/forgot-password"
                     className="text-slate-600 hover:text-slate-900 underline underline-offset-2"
@@ -833,37 +856,39 @@ export default function AuthClientSimple() {
               </div>
             </div>
 
-            <div className="mt-3 rounded-3xl border border-white/10 bg-black/20 p-4 text-center text-sm text-slate-200">
-              {authMode === "login" ? (
-                <>
-                  Pas de compte ?{" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMode("register");
-                      setStatus("");
-                    }}
-                    className="font-semibold text-white underline underline-offset-2"
-                  >
-                    Inscris-toi
-                  </button>
-                </>
-              ) : (
-                <>
-                  Tu as déjà un compte ?{" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMode("login");
-                      setStatus("");
-                    }}
-                    className="font-semibold text-white underline underline-offset-2"
-                  >
-                    Connecte-toi
-                  </button>
-                </>
-              )}
-            </div>
+            {!FIREBASE_AUTH_ONLY ? (
+              <div className="mt-3 rounded-3xl border border-white/10 bg-black/20 p-4 text-center text-sm text-slate-200">
+                {authMode === "login" ? (
+                  <>
+                    Pas de compte ?{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode("register");
+                        setStatus("");
+                      }}
+                      className="font-semibold text-white underline underline-offset-2"
+                    >
+                      Inscris-toi
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    Tu as déjà un compte ?{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode("login");
+                        setStatus("");
+                      }}
+                      className="font-semibold text-white underline underline-offset-2"
+                    >
+                      Connecte-toi
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
         </section>
         </div>

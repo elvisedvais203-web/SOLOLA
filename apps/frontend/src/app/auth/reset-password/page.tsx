@@ -7,6 +7,10 @@ import api from "../../../lib/nextalkapi";
 import { storeSession } from "../../../lib/nextalksession";
 import { SololaThemedLogo } from "../../../components/sololathemedlogo";
 
+const FIREBASE_AUTH_ONLY =
+  process.env.NEXT_PUBLIC_FIREBASE_AUTH_ONLY === "1" ||
+  process.env.NEXT_PUBLIC_FIREBASE_AUTH_ONLY === "true";
+
 function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -32,6 +36,12 @@ function ResetPasswordForm() {
       else root.setAttribute("data-theme", prevTheme);
     };
   }, []);
+
+  useEffect(() => {
+    if (FIREBASE_AUTH_ONLY) {
+      router.replace("/auth");
+    }
+  }, [router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,6 +83,14 @@ function ResetPasswordForm() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (FIREBASE_AUTH_ONLY) {
+    return (
+      <div className="mx-auto flex min-h-[100svh] max-w-md flex-col justify-center px-4 py-12">
+        <p className="text-center text-sm text-slate-500">Redirection vers la connexion…</p>
+      </div>
+    );
   }
 
   return (

@@ -192,32 +192,43 @@ class MemoryRedis implements RedisLike {
 
 let lastRedisErrorLogAt = 0;
 
+function looksLikeRedisConnectionUrl(url: string): boolean {
+  return /^rediss?:\/\//i.test(url.trim());
+}
+
 function createRedisClient(): RedisLike {
-  if (!env.redisConfigured) {
-    logger.warn("REDIS_URL absent, fallback memoire active");
-    return new MemoryRedis();
+  const raw = process.env.REDIS_URL?.trim() ?? "";
+  if (env.redisConfigured && env.redisUrl) {
+    const client = new Redis(env.redisUrl, {
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      lazyConnect: true,
+      connectTimeout: 5000
+    });
+
+    client.on("error", (error) => {
+      const now = Date.now();
+      if (now - lastRedisErrorLogAt < 30000) {
+        return;
+      }
+
+      lastRedisErrorLogAt = now;
+      logger.warn("Redis indisponible, certaines fonctions seront degradees", {
+        message: error.message
+      });
+    });
+
+    return client as unknown as RedisLike;
   }
 
-  const client = new Redis(env.redisUrl, {
-    maxRetriesPerRequest: 1,
-    enableOfflineQueue: false,
-    lazyConnect: true,
-    connectTimeout: 5000
-  });
-
-  client.on("error", (error) => {
-    const now = Date.now();
-    if (now - lastRedisErrorLogAt < 30000) {
-      return;
-    }
-
-    lastRedisErrorLogAt = now;
-    logger.warn("Redis indisponible, certaines fonctions seront degradees", {
-      message: error.message
-    });
-  });
-
-  return client as unknown as RedisLike;
+  if (raw && !looksLikeRedisConnectionUrl(raw)) {
+    logger.error(
+      "REDIS_URL invalide : une URL Redis doit commencer par redis:// ou rediss:// (copie l’URL complète depuis Render > ton instance Redis). Fallback memoire active."
+    );
+  } else if (!raw) {
+    logger.warn("REDIS_URL absent, fallback memoire active");
+  }
+  return new MemoryRedis();
 }
 
 export const redis = createRedisClient();

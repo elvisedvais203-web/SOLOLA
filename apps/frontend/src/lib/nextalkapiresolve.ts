@@ -12,9 +12,9 @@ export function normalizeBackendApiUrl(raw: string | undefined): string {
 /**
  * Base URL pour axios.
  *
- * Navigateur (prod) : si `NEXT_PUBLIC_API_URL` ou `NEXT_PUBLIC_SOCKET_URL` est défini au **build**,
- * on appelle le backend **directement** (HTTPS). C’est plus fiable que le proxy Next sur Render.
- * Sinon on utilise le proxy same-origin `/api` (rewrites).
+ * Navigateur (hors localhost) : toujours `/api` (same-origin). Le route handler
+ * `app/api/[...path]` relaie vers le backend ; évite CORS et les erreurs si
+ * `NEXT_PUBLIC_*` est mal défini au build.
  *
  * SSR / Node : URL absolue depuis les variables d’environnement.
  */
@@ -27,12 +27,6 @@ export function resolveAxiosApiBaseUrl(): string {
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return "http://localhost:4000/api";
     }
-
-    if (envUrl || socketEnv) {
-      const fromEnv = envUrl || `${socketEnv!.replace(/\/+$/, "")}/api`;
-      return normalizeBackendApiUrl(fromEnv);
-    }
-
     return "/api";
   }
 

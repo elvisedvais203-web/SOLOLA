@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { normalizeBackendApiUrl } from "../../../lib/nextalkapiresolve";
+import { getBackendOrigin } from "../../../lib/nextalkbackendorigin";
 
 export async function POST(req: NextRequest) {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-  const socketBase = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
-  const apiBase = normalizeBackendApiUrl(
-    envUrl || (socketBase ? `${socketBase.replace(/\/+$/, "")}/api` : undefined)
-  );
+  const apiBase = `${getBackendOrigin()}/api`;
 
   const authorization = req.headers.get("authorization");
   const csrf = req.headers.get("x-csrf-token");

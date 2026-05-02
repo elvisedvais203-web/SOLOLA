@@ -2,10 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import api from "../../../lib/nextalkapi";
 import { SololaThemedLogo } from "../../../components/sololathemedlogo";
 
+const FIREBASE_AUTH_ONLY =
+  process.env.NEXT_PUBLIC_FIREBASE_AUTH_ONLY === "1" ||
+  process.env.NEXT_PUBLIC_FIREBASE_AUTH_ONLY === "true";
+
 export default function ForgotPasswordPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("");
   const [statusType, setStatusType] = useState<"error" | "success">("success");
@@ -20,6 +26,12 @@ export default function ForgotPasswordPage() {
       else root.setAttribute("data-theme", prevTheme);
     };
   }, []);
+
+  useEffect(() => {
+    if (FIREBASE_AUTH_ONLY) {
+      router.replace("/auth");
+    }
+  }, [router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -49,6 +61,14 @@ export default function ForgotPasswordPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (FIREBASE_AUTH_ONLY) {
+    return (
+      <div className="mx-auto flex min-h-[100svh] max-w-md flex-col justify-center px-4 py-12">
+        <p className="text-center text-sm text-slate-500">Redirection vers la connexion…</p>
+      </div>
+    );
   }
 
   return (
