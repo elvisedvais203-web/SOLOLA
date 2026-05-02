@@ -3,7 +3,8 @@ import { resolveAxiosApiBaseUrl } from "./nextalkapiresolve";
 
 const api = axios.create({
   baseURL: resolveAxiosApiBaseUrl(),
-  timeout: 12000
+  timeout: 20000,
+  withCredentials: false
 });
 
 let refreshPromise: Promise<string> | null = null;

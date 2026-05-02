@@ -131,7 +131,6 @@ export default function AuthClientSimple() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = sanitizeNextPath(searchParams.get("next"));
-  const apiConfigured = Boolean(process.env.NEXT_PUBLIC_API_URL) || process.env.NODE_ENV !== "production";
   const [tab, setTab] = useState<"phone" | "email">("email");
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [oauthBusy, setOauthBusy] = useState<null | "google" | "apple">(null);
@@ -207,7 +206,6 @@ export default function AuthClientSimple() {
 
   const oauthDisabled =
     !FIREBASE_CONFIGURED ||
-    !apiConfigured ||
     oauthBusy !== null ||
     sending ||
     verifying ||
@@ -256,7 +254,7 @@ export default function AuthClientSimple() {
   };
 
   const signInWithGooglePopup = async () => {
-    if (!FIREBASE_CONFIGURED || !apiConfigured) {
+    if (!FIREBASE_CONFIGURED) {
       return;
     }
     setOauthBusy("google");
@@ -276,7 +274,7 @@ export default function AuthClientSimple() {
   };
 
   const signInWithApplePopup = async () => {
-    if (!FIREBASE_CONFIGURED || !apiConfigured) {
+    if (!FIREBASE_CONFIGURED) {
       return;
     }
     setOauthBusy("apple");
@@ -643,12 +641,6 @@ export default function AuthClientSimple() {
 
           {tab === "phone" ? (
             <>
-              {!apiConfigured ? (
-                <div className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                  Configuration API manquante : définissez NEXT_PUBLIC_API_URL (ex.{" "}
-                  https://ton-backend.onrender.com/api), puis redéployez le frontend.
-                </div>
-              ) : null}
               {!FIREBASE_CONFIGURED ? (
                 <div className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                   Configuration Firebase manquante : définissez NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -715,12 +707,6 @@ export default function AuthClientSimple() {
             </>
           ) : (
             <>
-              {!apiConfigured ? (
-                <div className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                  Configuration API manquante : définissez NEXT_PUBLIC_API_URL (ex.{" "}
-                  https://ton-backend.onrender.com/api), puis redéployez le frontend.
-                </div>
-              ) : null}
               <button
                 type="button"
                 onClick={() => {

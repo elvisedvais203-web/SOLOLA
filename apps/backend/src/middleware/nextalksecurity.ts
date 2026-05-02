@@ -41,6 +41,11 @@ function isAllowedOrigin(origin: string): boolean {
     if (!env.nodeEnv || env.nodeEnv === "development") {
       if (host === "localhost" || host === "127.0.0.1") return true;
     }
+    // Front et API souvent sur deux services *.onrender.com : autoriser les origines Render en prod
+    // lorsque le frontend appelle l’API directement (NEXT_PUBLIC_API_URL).
+    if (env.nodeEnv === "production" && host.endsWith(".onrender.com")) {
+      return true;
+    }
     return false;
   } catch {
     return false;
