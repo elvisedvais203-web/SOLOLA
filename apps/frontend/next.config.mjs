@@ -4,6 +4,17 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function upstreamForRewrites() {
+  const raw =
+    process.env.API_PROXY_TARGET?.trim() ||
+    process.env.NEXT_PUBLIC_API_URL?.trim() ||
+    process.env.NEXT_PUBLIC_SOCKET_URL?.trim() ||
+    "https://solola-api.onrender.com";
+  let base = raw.replace(/\/+$/, "");
+  if (base.endsWith("/api")) base = base.slice(0, -4);
+  return base;
+}
+
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
@@ -14,6 +25,11 @@ const nextConfig = {
       { protocol: "https", hostname: "images.unsplash.com" },
       { protocol: "https", hostname: "res.cloudinary.com" }
     ]
+  },
+  /** Appels `/api/*` depuis le navigateur → backend réel (évite CORS et URLs cassées). */
+  async rewrites() {
+    const base = upstreamForRewrites();
+    return [{ source: "/api/:path*", destination: `${base}/api/:path*` }];
   }
 };
 

@@ -1,22 +1,8 @@
 import axios from "axios";
-import { DEPLOY_FALLBACK_API_BASE } from "./nextalkdeployfallbacks";
-
-function resolveApiBaseUrl(): string {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-  if (envUrl) return envUrl;
-  const socketEnv = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
-  if (socketEnv) return `${socketEnv.replace(/\/+$/, "")}/api`;
-  if (typeof window !== "undefined") {
-    const { hostname } = window.location;
-    if (hostname === "localhost" || hostname === "127.0.0.1") {
-      return "http://localhost:4000/api";
-    }
-  }
-  return DEPLOY_FALLBACK_API_BASE;
-}
+import { resolveAxiosApiBaseUrl } from "./nextalkapiresolve";
 
 const api = axios.create({
-  baseURL: resolveApiBaseUrl(),
+  baseURL: resolveAxiosApiBaseUrl(),
   timeout: 12000
 });
 
