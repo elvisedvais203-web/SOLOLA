@@ -1,4 +1,5 @@
 import { io } from "socket.io-client";
+import { DEPLOY_FALLBACK_SOCKET_BASE } from "./nextalkdeployfallbacks";
 
 function resolveSocketUrl(): string {
   const socketEnv = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
@@ -9,9 +10,7 @@ function resolveSocketUrl(): string {
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return "http://localhost:4000";
     }
-    if (hostname.endsWith(".onrender.com")) {
-      return "https://solola-api.onrender.com";
-    }
+    return DEPLOY_FALLBACK_SOCKET_BASE;
   }
   return "http://localhost:4000";
 }

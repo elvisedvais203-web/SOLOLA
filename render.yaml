@@ -1,3 +1,5 @@
+# Blueprint Render : les secrets (Firebase, JWT, DB, superadmin…) se renseignent
+# dans le tableau de bord Render — ne pas committer de vraies valeurs ici.
 services:
   - type: web
     name: solola-frontend
@@ -9,6 +11,7 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # À ajuster si ton service API a une autre URL (sans secret).
       - key: NEXT_PUBLIC_API_URL
         value: https://solola-api.onrender.com/api
       - key: NEXT_PUBLIC_SOCKET_URL
@@ -17,18 +20,19 @@ services:
         value: Solola
       - key: NEXT_PUBLIC_PUSH_PUBLIC_KEY
         sync: false
+      # Console Firebase > Paramètres projet > Application web (valeurs publiques mais à garder cohérentes avec le projet).
       - key: NEXT_PUBLIC_FIREBASE_API_KEY
-        value: AIzaSy...
+        sync: false
       - key: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-        value: solola-app-18e88.firebaseapp.com
+        sync: false
       - key: NEXT_PUBLIC_FIREBASE_PROJECT_ID
-        value: solola-app-18e88
+        sync: false
       - key: NEXT_PUBLIC_FIREBASE_APP_ID
-        value: 1:830530173370:web:c305783c067825d8f34583
+        sync: false
       - key: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
-        value: 830530173370
+        sync: false
       - key: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-        value: solola-app-18e88.firebasestorage.app
+        sync: false
   - type: web
     name: solola-api
     runtime: node
@@ -46,6 +50,7 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      # Origines autorisées : inclure l’URL exacte du frontend (ex. https://solola-frontend.onrender.com).
       - key: CORS_ORIGIN
         value: https://solola-frontend.onrender.com
       - key: JWT_ACCESS_SECRET
@@ -58,6 +63,7 @@ services:
         value: 30d
       - key: PAYMENT_WEBHOOK_SECRET
         sync: false
+      # Firebase Admin : soit FIREBASE_SERVICE_ACCOUNT_JSON (JSON complet), soit les trois variables ci‑dessous.
       - key: FIREBASE_PROJECT_ID
         sync: false
       - key: FIREBASE_CLIENT_EMAIL
@@ -99,18 +105,8 @@ services:
       - key: WEB_PUSH_VAPID_PRIVATE_KEY
         sync: false
       - key: SUPERADMIN_EMAIL
-        value: elvisedvais203@gmail.com
+        sync: false
       - key: SUPERADMIN_PHONE
-        value: +243895966288
+        sync: false
       - key: SUPERADMIN_PASSWORD
-        value: Edvais@CongoLove2026!
-      - key: SUPERADMIN_NAME
-        value: Edvais Makina
-      - key: SUPERADMIN_EMAIL
-        value: elvisedvais203@gmail.com
-      - key: SUPERADMIN_PHONE
-        value: +243895966288
-      - key: SUPERADMIN_PASSWORD
-        value: Edvais@CongoLove2026!
-      - key: SUPERADMIN_NAME
-        value: Edvais Makina
+        sync: false

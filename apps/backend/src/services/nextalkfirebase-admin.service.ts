@@ -51,6 +51,11 @@ function getFirebaseApp(): App {
   return firebaseApp;
 }
 
+function normalizeTokenEmail(raw: string | undefined) {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return s || undefined;
+}
+
 export async function verifyFirebaseIdToken(idToken: string) {
   if (!idToken) {
     throw new ApiError(400, "ID token Firebase requis.");
@@ -59,15 +64,19 @@ export async function verifyFirebaseIdToken(idToken: string) {
   const auth = getAuth(getFirebaseApp());
   try {
     const decoded = await auth.verifyIdToken(idToken, true);
-    if (!decoded.uid || !decoded.phone_number) {
-      throw new ApiError(400, "Token Firebase invalide: numero manquant.");
+    if (!decoded.uid) {
+      throw new ApiError(400, "Token Firebase invalide : identifiant manquant.");
     }
 
     return {
       uid: decoded.uid,
-      phoneNumber: decoded.phone_number
+      phoneNumber: decoded.phone_number,
+      email: normalizeTokenEmail(decoded.email)
     };
-  } catch {
-    throw new ApiError(401, "Session Firebase invalide ou expiree.");
+  } catch (e) {
+    if (e instanceof ApiError) {
+      throw e;
+    }
+    throw new ApiError(401, "Session Firebase invalide ou expirée.");
   }
 }

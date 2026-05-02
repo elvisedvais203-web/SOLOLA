@@ -1,6 +1,8 @@
 node_modules/
 .env
 .env.*
+!.env.example
+!**/.env.example
 .next/
 *.tsbuildinfo
 dist/
@@ -13,6 +15,9 @@ apps/frontend/.next-run/
 mobile/android/NextalkMobileAndroid/.gradle/
 serviceAccountKey.json
 **/serviceAccountKey.json
+# CLI / archives locales (ne pas versionner les binaires)
+tools/**/*.exe
+tools/**/*.zip
 *.pem
 *.key
 *.p12

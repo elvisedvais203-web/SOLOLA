@@ -1,4 +1,5 @@
 import axios from "axios";
+import { DEPLOY_FALLBACK_API_BASE } from "./nextalkdeployfallbacks";
 
 function resolveApiBaseUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
@@ -6,19 +7,12 @@ function resolveApiBaseUrl(): string {
   const socketEnv = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
   if (socketEnv) return `${socketEnv.replace(/\/+$/, "")}/api`;
   if (typeof window !== "undefined") {
-    const { protocol, hostname } = window.location;
+    const { hostname } = window.location;
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return "http://localhost:4000/api";
     }
-    // Fallback when NEXT_PUBLIC_API_URL is missing in cloud deployments.
-    // Use the Solola Render API service by default.
-    if (hostname.endsWith(".onrender.com")) {
-      return `${protocol}//solola-api.onrender.com/api`;
-    }
   }
-  // Production-safe default: always hit the API service directly
-  // (prefer setting NEXT_PUBLIC_API_URL / NEXT_PUBLIC_SOCKET_URL on Render).
-  return "https://solola-api.onrender.com/api";
+  return DEPLOY_FALLBACK_API_BASE;
 }
 
 const api = axios.create({

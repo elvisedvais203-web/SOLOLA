@@ -3,8 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import type { User } from "firebase/auth";
 import {
   signInWithPhoneNumber,
+  signInWithPopup,
+  signOut,
+  GoogleAuthProvider,
+  OAuthProvider,
   ApplicationVerifier,
   RecaptchaVerifier
 } from "firebase/auth";
@@ -24,6 +29,16 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+/** Évite les redirections ouvertes via ?next=https://... */
+function sanitizeNextPath(raw: string | null): string {
+  const fallback = "/dashboard";
+  if (raw == null || typeof raw !== "string") return fallback;
+  const t = raw.trim();
+  if (!t.startsWith("/") || t.startsWith("//")) return fallback;
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(t)) return fallback;
+  return t;
+}
+
 const FIREBASE_CONFIGURED = Boolean(
   process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
     process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN &&
@@ -41,34 +56,44 @@ function firebaseAuthUserMessage(error: unknown): string {
 
   const byCode: Record<string, string> = {
     "auth/invalid-phone-number":
-      "Numero de telephone invalide pour Firebase. Utilisez le format international, par ex. +243895966288 (sans espaces).",
-    "auth/missing-phone-number": "Numero manquant. Verifiez le champ telephone.",
+      "Numéro de téléphone invalide pour Firebase. Utilisez le format international, par ex. +243895966288 (sans espaces).",
+    "auth/missing-phone-number": "Numéro manquant. Vérifiez le champ téléphone.",
     "auth/invalid-verification-code":
-      "Code SMS incorrect. Verifiez les 6 chiffres et reessayez.",
+      "Code SMS incorrect. Vérifiez les 6 chiffres et réessayez.",
     "auth/code-expired":
-      "Ce code a expire. Demandez un nouveau code avec « Envoyer le code ».",
+      "Ce code a expiré. Demandez un nouveau code avec « Envoyer le code ».",
     "auth/session-expired":
-      "La session a expire. Demandez un nouveau code SMS.",
+      "La session a expiré. Demandez un nouveau code SMS.",
     "auth/too-many-requests":
-      "Trop de tentatives. Attendez quelques minutes ou changez de reseau, puis reessayez.",
+      "Trop de tentatives. Attendez quelques minutes ou changez de réseau, puis réessayez.",
     "auth/quota-exceeded":
-      "Quota SMS Firebase depasse pour ce projet. Reessayez plus tard ou contactez l administrateur (facturation Firebase).",
+      "Quota SMS Firebase dépassé pour ce projet. Réessayez plus tard ou contactez l’administrateur (facturation Firebase).",
     "auth/billing-not-enabled":
-      "Firebase exige un compte de facturation actif pour envoyer de vrais SMS (Phone Auth hors numeros de test). Dans la console Firebase : ouvrez votre projet, menu Facturation / Upgrade (plan Blaze ou association a Google Cloud Billing), ajoutez un moyen de paiement, puis attendez quelques minutes et reessayez. Alternative en developpement : Authentication > Sign-in method > Phone > Numeros de test (sans SMS reel).",
+      "Firebase exige un compte de facturation actif pour envoyer de vrais SMS (Phone Auth hors numéros de test). Dans la console Firebase : ouvrez votre projet, menu Facturation / Upgrade (plan Blaze ou association à Google Cloud Billing), ajoutez un moyen de paiement, puis attendez quelques minutes et réessayez. Alternative en développement : Authentication > Sign-in method > Phone > Numéros de test (sans SMS réel).",
     "auth/operation-not-allowed":
-      "La connexion par telephone n est pas activee dans Firebase Console : Authentication > Sign-in method > Phone > Activer.",
+      "Cette méthode de connexion n’est pas activée. Dans Firebase Console : Authentication > Sign-in method, active Phone / Google / Apple selon ce que tu utilises.",
     "auth/unauthorized-domain":
-      "Ce site (domaine) n est pas autorise pour Firebase. Dans la console Firebase : Authentication > Settings > Authorized domains, ajoutez localhost (dev) ou votre domaine de production.",
+      "Ce site (domaine) n’est pas autorisé pour Firebase. Dans la console Firebase : Authentication > Settings > Authorized domains, ajoutez localhost (dev) ou votre domaine de production.",
     "auth/captcha-check-failed":
-      "Verification reCAPTCHA echouee. Rechargez la page, desactivez les bloqueurs de pub, puis reessayez.",
+      "Vérification reCAPTCHA échouée. Rechargez la page, désactivez les bloqueurs de pub, puis réessayez.",
     "auth/invalid-app-credential":
-      "Identifiants Firebase invalides (cle API, App ID ou domaine). Verifiez les variables NEXT_PUBLIC_FIREBASE_* dans le fichier .env et la configuration du projet Firebase.",
+      "Identifiants Firebase invalides (clé API, App ID ou domaine). Vérifiez les variables NEXT_PUBLIC_FIREBASE_* dans le fichier .env et la configuration du projet Firebase.",
     "auth/app-not-authorized":
-      "Cette application n est pas autorisee a utiliser Firebase Authentication avec ce projet.",
+      "Cette application n’est pas autorisée à utiliser Firebase Authentication avec ce projet.",
     "auth/network-request-failed":
-      "Connexion reseau vers Firebase impossible. Verifiez Internet ou un pare-feu / VPN.",
+      "Connexion réseau vers Firebase impossible. Vérifiez Internet ou un pare-feu / VPN.",
     "auth/missing-client-identifier":
-      "Configuration Firebase incomplete cote client (cles ou App ID manquants)."
+      "Configuration Firebase incomplète côté client (clés ou App ID manquants).",
+    "auth/popup-closed-by-user":
+      "Connexion annulée (fenêtre fermée). Réessaie ou désactive le bloqueur de pop-up.",
+    "auth/cancelled-popup-request":
+      "Connexion annulée. Réessaie.",
+    "auth/account-exists-with-different-credential":
+      "Un compte existe déjà avec cet e-mail via une autre méthode (mot de passe ou téléphone). Connecte-toi avec cette méthode, puis tu pourras lier le compte dans les paramètres si besoin.",
+    "auth/web-storage-unsupported":
+      "Stockage navigateur indisponible (mode privé ?). Utilise une fenêtre normale.",
+    "auth/operation-not-supported-in-this-environment":
+      "Connexion non prise en charge dans cet environnement (navigateur ou intégration)."
   };
 
   if (code && byCode[code]) {
@@ -77,19 +102,19 @@ function firebaseAuthUserMessage(error: unknown): string {
 
   const text = `${raw} ${code}`.toLowerCase();
   if (text.includes("invalid-phone-number")) {
-    return "Numero invalide. Format attendu: +243...";
+    return "Numéro invalide. Format attendu : +243…";
   }
   if (text.includes("too-many-requests")) {
-    return "Trop de tentatives. Veuillez reessayer plus tard.";
+    return "Trop de tentatives. Veuillez réessayer plus tard.";
   }
   if (text.includes("invalid-verification-code")) {
-    return "Code invalide. Veuillez verifier le SMS.";
+    return "Code invalide. Veuillez vérifier le SMS.";
   }
   if (text.includes("session-expired") || text.includes("code-expired")) {
-    return "Code expire. Demandez un nouveau code.";
+    return "Code expiré. Demandez un nouveau code.";
   }
   if (text.includes("network-request-failed") || text.includes("network")) {
-    return "Connexion reseau echouee. Verifiez votre connexion Internet.";
+    return "Connexion réseau échouée. Vérifiez votre connexion Internet.";
   }
   if (text.includes("billing-not-enabled")) {
     return byCode["auth/billing-not-enabled"];
@@ -97,24 +122,40 @@ function firebaseAuthUserMessage(error: unknown): string {
 
   const devHint =
     process.env.NODE_ENV === "development" && (code || raw)
-      ? ` (technique: ${code || "sans code"}${raw ? ` — ${raw.slice(0, 120)}` : ""})`
+      ? ` (technique : ${code || "sans code"}${raw ? ` — ${raw.slice(0, 120)}` : ""})`
       : "";
-  return `Une erreur est survenue lors de l envoi ou de la verification.${devHint}`;
+  return `Une erreur est survenue lors de l’envoi ou de la vérification.${devHint}`;
 }
 
 export default function AuthClientSimple() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/dashboard";
+  const nextPath = sanitizeNextPath(searchParams.get("next"));
   const apiConfigured = Boolean(process.env.NEXT_PUBLIC_API_URL) || process.env.NODE_ENV !== "production";
   const [tab, setTab] = useState<"phone" | "email">("email");
-  const [authMode, setAuthMode] = useState<"login" | "register" | "reset">("login");
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [oauthBusy, setOauthBusy] = useState<null | "google" | "apple">(null);
+  const [phoneNumber, setPhoneNumber] = useState("+243");
+  const [otpCode, setOtpCode] = useState("");
+  const [confirmationResult, setConfirmationResult] =
+    useState<PhoneConfirmationResult | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [status, setStatus] = useState("");
+  const [statusType, setStatusType] = useState<"error" | "success">("success");
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [submittingEmail, setSubmittingEmail] = useState(false);
 
   useEffect(() => {
     if (isLoggedIn()) {
       router.replace(nextPath);
-      return;
     }
+  }, [router, nextPath]);
+
+  useEffect(() => {
     const root = document.documentElement;
     const prevTheme = root.getAttribute("data-theme");
     root.setAttribute("data-theme", "light");
@@ -124,21 +165,19 @@ export default function AuthClientSimple() {
     };
   }, []);
 
-  const [phoneNumber, setPhoneNumber] = useState("+243");
-  const [otpCode, setOtpCode] = useState("");
-  const [confirmationResult, setConfirmationResult] =
-    useState<PhoneConfirmationResult | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [resetToken, setResetToken] = useState("");
+  useEffect(() => {
+    const paramError = searchParams.get("error");
+    if (paramError?.trim()) {
+      setStatus(paramError.trim());
+      setStatusType("error");
+    }
+  }, [searchParams]);
 
-  const [status, setStatus] = useState("");
-  const [statusType, setStatusType] = useState<"error" | "success">("success");
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [submittingEmail, setSubmittingEmail] = useState(false);
+  useEffect(() => {
+    if (searchParams.get("register") === "1") {
+      setAuthMode("register");
+    }
+  }, [searchParams]);
 
   const getOrCreateRecaptchaVerifier = (): ApplicationVerifier | undefined => {
     try {
@@ -166,6 +205,97 @@ export default function AuthClientSimple() {
     }
   };
 
+  const oauthDisabled =
+    !FIREBASE_CONFIGURED ||
+    !apiConfigured ||
+    oauthBusy !== null ||
+    sending ||
+    verifying ||
+    submittingEmail;
+
+  const emailFormDisabled = submittingEmail || oauthBusy !== null;
+
+  const finishFirebaseUserSession = async (firebaseUser: User): Promise<boolean> => {
+    try {
+      const idToken = await firebaseUser.getIdToken(true);
+      const backend = await api.post("/auth/firebase/verify", {
+        idToken,
+        displayName: firebaseUser.displayName ?? undefined
+      });
+      storeSession({
+        accessToken: backend.data.tokens.accessToken,
+        refreshToken: backend.data.tokens.refreshToken,
+        user: backend.data.user
+      });
+      setStatus("Connexion réussie.");
+      setStatusType("success");
+      setTimeout(() => {
+        router.push(nextPath);
+      }, 400);
+      return true;
+    } catch (error: unknown) {
+      await signOut(auth).catch(() => {});
+      console.error("[auth] firebase/verify (OAuth)", error);
+      const e = error as {
+        code?: string;
+        message?: string;
+        response?: { data?: { message?: string } };
+      };
+      if (typeof e?.code === "string" && e.code.startsWith("auth/")) {
+        setStatus(firebaseAuthUserMessage(error));
+      } else {
+        setStatus(
+          e?.response?.data?.message ??
+            e?.message ??
+            "Le serveur n’a pas pu valider la session. Réessaie ou utilise e-mail / téléphone."
+        );
+      }
+      setStatusType("error");
+      return false;
+    }
+  };
+
+  const signInWithGooglePopup = async () => {
+    if (!FIREBASE_CONFIGURED || !apiConfigured) {
+      return;
+    }
+    setOauthBusy("google");
+    setStatus("");
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const cred = await signInWithPopup(auth, provider);
+      await finishFirebaseUserSession(cred.user);
+    } catch (error: unknown) {
+      console.error("[auth] Google popup", error);
+      setStatus(firebaseAuthUserMessage(error));
+      setStatusType("error");
+    } finally {
+      setOauthBusy(null);
+    }
+  };
+
+  const signInWithApplePopup = async () => {
+    if (!FIREBASE_CONFIGURED || !apiConfigured) {
+      return;
+    }
+    setOauthBusy("apple");
+    setStatus("");
+    try {
+      const provider = new OAuthProvider("apple.com");
+      provider.addScope("email");
+      provider.addScope("name");
+      const cred = await signInWithPopup(auth, provider);
+      await finishFirebaseUserSession(cred.user);
+    } catch (error: unknown) {
+      console.error("[auth] Apple popup", error);
+      setStatus(firebaseAuthUserMessage(error));
+      setStatusType("error");
+    } finally {
+      setOauthBusy(null);
+    }
+  };
+
   const sendCode = async () => {
     try {
       setSending(true);
@@ -176,7 +306,7 @@ export default function AuthClientSimple() {
       const verifier = getOrCreateRecaptchaVerifier();
 
       if (!verifier) {
-        setStatus("reCAPTCHA indisponible. Rechargez la page puis reessayez.");
+        setStatus("reCAPTCHA indisponible. Rechargez la page puis réessayez.");
         setStatusType("error");
         return;
       }
@@ -188,7 +318,7 @@ export default function AuthClientSimple() {
       );
 
       setConfirmationResult(confirmation);
-      setStatus(`Code SMS envoye au numero ${normalizedPhone}.`);
+      setStatus(`Code SMS envoyé au numéro ${normalizedPhone}.`);
       setStatusType("success");
     } catch (error: unknown) {
       console.error("[auth] signInWithPhoneNumber", error);
@@ -212,13 +342,13 @@ export default function AuthClientSimple() {
 
   const verifyCode = async () => {
     if (!confirmationResult) {
-      setStatus("Veuillez d'abord demander le code SMS.");
+      setStatus("Veuillez d’abord demander le code SMS.");
       setStatusType("error");
       return;
     }
 
     if (otpCode.trim().length < 6) {
-      setStatus("Entrez le code OTP a 6 chiffres.");
+      setStatus("Entrez le code OTP à 6 chiffres.");
       setStatusType("error");
       return;
     }
@@ -240,7 +370,7 @@ export default function AuthClientSimple() {
         user: backend.data.user
       });
 
-      setStatus("Connexion reussie.");
+      setStatus("Connexion réussie.");
       setStatusType("success");
       setTimeout(() => {
         router.push(nextPath);
@@ -273,14 +403,14 @@ export default function AuthClientSimple() {
       setStatus("");
 
       if (!email.trim()) {
-        setStatus("Entrez votre email.");
+        setStatus("Entrez votre adresse e-mail.");
         setStatusType("error");
         return;
       }
 
       if (!isValidEmail(email.trim())) {
         setStatus(
-          "Utilise une adresse email valide pour ce champ (ex: prenom@gmail.com). L inscription par numero se passe dans l onglet Téléphone avec le code SMS."
+          "Utilise une adresse e-mail valide pour ce champ (ex. prenom@gmail.com). L’inscription par numéro se fait dans l’onglet Téléphone avec le code SMS."
         );
         setStatusType("error");
         return;
@@ -288,7 +418,7 @@ export default function AuthClientSimple() {
 
       if (authMode === "register") {
         if (password.length < 8) {
-          setStatus("Mot de passe trop court (minimum 8 caracteres).");
+          setStatus("Mot de passe trop court (minimum 8 caractères).");
           setStatusType("error");
           return;
         }
@@ -307,7 +437,7 @@ export default function AuthClientSimple() {
           refreshToken: resp.data.tokens.refreshToken,
           user: resp.data.user
         });
-        setStatus("Compte cree. Connexion reussie.");
+        setStatus("Compte créé. Connexion réussie.");
         setStatusType("success");
         setTimeout(() => router.push(nextPath), 500);
         return;
@@ -323,45 +453,18 @@ export default function AuthClientSimple() {
           refreshToken: resp.data.tokens.refreshToken,
           user: resp.data.user
         });
-        setStatus("Connexion reussie.");
+        setStatus("Connexion réussie.");
         setStatusType("success");
         setTimeout(() => router.push(nextPath), 500);
         return;
       }
-
-      if (resetToken.trim()) {
-        const resp = await api.post("/auth/password/reset", {
-          token: resetToken.trim(),
-          newPassword: password
-        });
-        storeSession({
-          accessToken: resp.data.tokens.accessToken,
-          refreshToken: resp.data.tokens.refreshToken,
-          user: resp.data.user
-        });
-        setStatus("Mot de passe reinitialise. Connexion reussie.");
-        setStatusType("success");
-        setTimeout(() => router.push(nextPath), 500);
-        return;
-      }
-
-      const resp = await api.post("/auth/password/request-reset", {
-        email: email.trim()
-      });
-      const token = resp.data?.token as string | undefined;
-      setStatus(
-        token
-          ? `Token de reset (dev): ${token}`
-          : "Si un compte existe, un email de reinitialisation a ete envoye."
-      );
-      setStatusType("success");
     } catch (error: unknown) {
       const e = error as { code?: string; message?: string; response?: { data?: { message?: string } } };
       const raw = String(e?.message ?? "");
       const net = e?.code === "ERR_NETWORK" || raw.toLowerCase().includes("network error");
       setStatus(
         net
-          ? "Connexion au serveur impossible. Verifie Internet, desactive VPN/parefeu qui bloquent, ou reessaie dans quelques minutes. Si ca continue, NEXT_PUBLIC_API_URL doit pointer vers l API Render : https://solola-api.onrender.com/api"
+          ? "Connexion au serveur impossible. Vérifie ta connexion Internet, désactive le VPN ou le pare-feu qui bloquent, ou réessaie dans quelques minutes. Sur l’hébergeur du frontend, vérifie que NEXT_PUBLIC_API_URL pointe vers ton API (ex. https://ton-backend.onrender.com/api)."
           : (e?.response?.data?.message ?? raw) || "Erreur."
       );
       setStatusType("error");
@@ -376,9 +479,7 @@ export default function AuthClientSimple() {
   const canSubmitEmail =
     authMode === "login"
       ? Boolean(emailTrimmed) && Boolean(password)
-      : authMode === "register"
-        ? Boolean(emailTrimmed) && passwordOk && confirmOk
-        : Boolean(emailTrimmed);
+      : Boolean(emailTrimmed) && passwordOk && confirmOk;
 
   return (
     <div className="mx-auto flex min-h-[100svh] max-w-6xl items-stretch justify-center px-4 py-8 pb-14 md:py-12">
@@ -408,7 +509,7 @@ export default function AuthClientSimple() {
                 Tout ce qu’il te faut, dans une seule application.
               </p>
               <p className="mt-4 text-sm leading-relaxed text-white/80">
-                Publie, discute et partage comme sur Instagram avec ton identite Solola.
+                Publie, discute et partage comme sur Instagram avec ton identité Solola.
               </p>
             </div>
 
@@ -445,14 +546,12 @@ export default function AuthClientSimple() {
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-[#10172b]">
-                    {authMode === "login" ? "Connexion" : authMode === "register" ? "Inscription" : "Mot de passe"}
+                    {authMode === "login" ? "Connexion" : "Inscription"}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-600">
                     {authMode === "login"
                       ? "Entre tes identifiants pour te connecter."
-                      : authMode === "register"
-                        ? "Crée ton compte en quelques secondes."
-                        : "Demande ou applique un reset de mot de passe."}
+                      : "Crée ton compte en quelques secondes."}
                   </p>
                 </div>
                 <div className="hidden sm:block">
@@ -518,19 +617,21 @@ export default function AuthClientSimple() {
                 <div className="flex flex-col gap-2">
                   <button
                     type="button"
-                    disabled
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 opacity-70"
-                    title="Bientôt disponible"
+                    disabled={oauthDisabled}
+                    onClick={() => void signInWithGooglePopup()}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-[#10172b] shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    title={!FIREBASE_CONFIGURED ? "Configure Firebase dans .env" : undefined}
                   >
-                    Continuer avec Google
+                    {oauthBusy === "google" ? "Connexion…" : "Continuer avec Google"}
                   </button>
                   <button
                     type="button"
-                    disabled
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 opacity-70"
-                    title="Bientôt disponible"
+                    disabled={oauthDisabled}
+                    onClick={() => void signInWithApplePopup()}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-[#10172b] px-4 py-3 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+                    title={!FIREBASE_CONFIGURED ? "Configure Firebase dans .env" : undefined}
                   >
-                    Continuer avec Apple
+                    {oauthBusy === "apple" ? "Connexion…" : "Continuer avec Apple"}
                   </button>
                 </div>
 
@@ -543,23 +644,23 @@ export default function AuthClientSimple() {
           {tab === "phone" ? (
             <>
               {!apiConfigured ? (
-                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                  Configuration API manquante : definissez NEXT_PUBLIC_API_URL (ex:
-                  https://solola-api.onrender.com/api), puis redeployez le frontend.
+                <div className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  Configuration API manquante : définissez NEXT_PUBLIC_API_URL (ex.{" "}
+                  https://ton-backend.onrender.com/api), puis redéployez le frontend.
                 </div>
               ) : null}
               {!FIREBASE_CONFIGURED ? (
-                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                  Configuration Firebase manquante : definissez NEXT_PUBLIC_FIREBASE_API_KEY,
+                <div className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  Configuration Firebase manquante : définissez NEXT_PUBLIC_FIREBASE_API_KEY,
                   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN, NEXT_PUBLIC_FIREBASE_PROJECT_ID et
-                  NEXT_PUBLIC_FIREBASE_APP_ID dans le fichier .env a la racine du projet, puis
-                  redemarrez le serveur de developpement.
+                  NEXT_PUBLIC_FIREBASE_APP_ID dans le fichier .env à la racine du projet, puis
+                  redémarrez le serveur de développement.
                 </div>
               ) : null}
 
               <div>
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-500">
-                  Numero telephone
+                  Numéro de téléphone
                 </label>
                 <input
                   value={phoneNumber}
@@ -569,14 +670,14 @@ export default function AuthClientSimple() {
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)] disabled:opacity-60"
                   placeholder="+243..."
                   autoComplete="tel"
-                  disabled={sending || verifying}
+                  disabled={sending || verifying || oauthBusy !== null}
                   type="tel"
                 />
               </div>
 
               <button
                 onClick={() => void sendCode()}
-                disabled={sending || verifying}
+                disabled={sending || verifying || oauthBusy !== null}
                 className="w-full rounded-xl bg-[#4c6fff] py-3 text-sm font-bold text-white shadow-[0_12px_30px_rgba(76,111,255,0.25)] transition hover:brightness-110 disabled:opacity-60"
               >
                 {sending ? "Envoi du code..." : "Envoyer le code"}
@@ -598,16 +699,16 @@ export default function AuthClientSimple() {
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center font-mono text-lg tracking-widest text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)] disabled:opacity-60"
                       placeholder="000000"
                       inputMode="numeric"
-                      disabled={verifying}
+                      disabled={verifying || oauthBusy !== null}
                     />
                   </div>
 
                   <button
                     onClick={() => void verifyCode()}
-                    disabled={sending || verifying}
+                    disabled={sending || verifying || oauthBusy !== null}
                     className="w-full rounded-xl border border-[#4c6fff] bg-white py-3 text-sm font-semibold text-[#4c6fff] transition hover:bg-slate-50 disabled:opacity-60"
                   >
-                    {verifying ? "Verification..." : "Verifier puis se connecter"}
+                    {verifying ? "Vérification…" : "Vérifier puis se connecter"}
                   </button>
                 </>
               )}
@@ -615,9 +716,9 @@ export default function AuthClientSimple() {
           ) : (
             <>
               {!apiConfigured ? (
-                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                  Configuration API manquante : definissez NEXT_PUBLIC_API_URL (ex:
-                  https://solola-api.onrender.com/api), puis redeployez le frontend.
+                <div className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  Configuration API manquante : définissez NEXT_PUBLIC_API_URL (ex.{" "}
+                  https://ton-backend.onrender.com/api), puis redéployez le frontend.
                 </div>
               ) : null}
               <button
@@ -635,64 +736,55 @@ export default function AuthClientSimple() {
                 <input
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)]"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)] disabled:opacity-60"
                   placeholder="Nom (optionnel)"
+                  disabled={emailFormDisabled}
                 />
               ) : null}
 
               <input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)]"
-                placeholder="Téléphone, nom d'utilisateur ou email"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)] disabled:opacity-60"
+                placeholder="Adresse e-mail"
                 inputMode="email"
                 autoComplete="email"
+                disabled={emailFormDisabled}
               />
 
               <input
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)]"
-                placeholder={authMode === "reset" && resetToken.trim() ? "Nouveau mot de passe" : "Mot de passe"}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)] disabled:opacity-60"
+                placeholder="Mot de passe"
                 type="password"
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                disabled={emailFormDisabled}
               />
 
               {authMode === "register" ? (
                 <input
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)]"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)] disabled:opacity-60"
                   placeholder="Confirmer le mot de passe (8 caractères min)"
                   type="password"
                   autoComplete="new-password"
-                />
-              ) : null}
-
-              {authMode === "reset" ? (
-                <input
-                  value={resetToken}
-                  onChange={(e) => setResetToken(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)]"
-                  placeholder="Token reset (laisser vide pour le demander)"
+                  disabled={emailFormDisabled}
                 />
               ) : null}
 
               <button
                 type="button"
                 onClick={() => void submitEmailAuth()}
-                disabled={submittingEmail || !canSubmitEmail}
+                disabled={emailFormDisabled || !canSubmitEmail}
                 className="w-full rounded-xl bg-[#4c6fff] py-3 text-sm font-bold text-white shadow-[0_12px_30px_rgba(76,111,255,0.25)] transition hover:brightness-110 disabled:opacity-50"
               >
                 {submittingEmail
                   ? "Veuillez patienter..."
                   : authMode === "login"
                     ? "Se connecter"
-                    : authMode === "register"
-                      ? "S’inscrire"
-                      : resetToken.trim()
-                        ? "Changer le mot de passe"
-                        : "Demander le reset"}
+                    : "S’inscrire"}
               </button>
 
               {authMode === "register" ? (
@@ -736,17 +828,19 @@ export default function AuthClientSimple() {
           <div id="recaptcha-container" style={{ display: "none" }} />
               </div>
 
-              <div className="mt-3 flex items-center justify-between text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("reset");
-                    setStatus("");
-                  }}
-                  className="text-slate-600 hover:text-slate-900 underline underline-offset-2"
-                >
-                  Mot de passe oublié ?
-                </button>
+              <div
+                className={`mt-3 flex items-center text-xs ${
+                  tab === "email" && authMode === "login" ? "justify-between" : "justify-end"
+                }`}
+              >
+                {tab === "email" && authMode === "login" ? (
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-slate-600 hover:text-slate-900 underline underline-offset-2"
+                  >
+                    Mot de passe oublié ?
+                  </Link>
+                ) : null}
                 <Link href="/legal/privacy" className="text-slate-500 hover:text-slate-800 underline underline-offset-2">
                   Confidentialité
                 </Link>

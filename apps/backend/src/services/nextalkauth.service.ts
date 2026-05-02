@@ -46,7 +46,7 @@ function normalizeEmail(raw: string) {
 function requirePasswordPolicy(password: string) {
   const p = String(password ?? "");
   if (p.length < 8) {
-    throw new ApiError(400, "Mot de passe trop court (minimum 8 caracteres).");
+    throw new ApiError(400, "Mot de passe trop court (minimum 8 caractères).");
   }
   return p;
 }
@@ -66,7 +66,7 @@ export async function registerWithEmailPassword(input: {
 
   const existing = await prisma.user.findFirst({ where: { email } });
   if (existing) {
-    throw new ApiError(409, "Un compte existe deja avec cet email.");
+    throw new ApiError(409, "Un compte existe déjà avec cet e-mail.");
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
@@ -184,7 +184,7 @@ export async function resetPassword(input: { token: string; newPassword: string 
   const tokenHash = hashToken(token);
   const row = await prisma.passwordResetToken.findUnique({ where: { tokenHash } });
   if (!row || row.usedAt || row.expiresAt < new Date()) {
-    throw new ApiError(400, "Token invalide ou expire.");
+    throw new ApiError(400, "Token invalide ou expiré.");
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
@@ -197,37 +197,45 @@ export async function resetPassword(input: { token: string; newPassword: string 
   return { user, tokens: issueTokens(user.id, user.planTier, user.role) };
 }
 
-export async function loginOrRegisterWithFirebasePhone(input: {
+export async function loginOrRegisterWithFirebaseIdentity(input: {
   firebaseUid: string;
-  phoneNumber: string;
+  phoneNumber?: string | null;
+  email?: string | null;
   displayName?: string;
   ipAddress?: string;
   userAgent?: string;
 }) {
   const firebaseUid = String(input.firebaseUid ?? "").trim();
-  const phone = normalizeInternationalPhone(String(input.phoneNumber ?? "").trim());
-
-  if (!firebaseUid || !phone) {
+  if (!firebaseUid) {
     throw new ApiError(400, "Informations Firebase invalides.");
   }
 
-  let user = await prisma.user.findFirst({
-    where: {
-      OR: [{ firebaseUid }, { phone }]
-    }
-  });
+  const email = input.email ? normalizeEmail(String(input.email)) : null;
+  let phone: string | null = null;
+  if (input.phoneNumber) {
+    phone = normalizeInternationalPhone(String(input.phoneNumber).trim());
+  }
+
+  let user =
+    (await prisma.user.findFirst({ where: { firebaseUid } })) ??
+    (email ? await prisma.user.findFirst({ where: { email } }) : null) ??
+    (phone ? await prisma.user.findFirst({ where: { phone } }) : null);
 
   if (!user) {
     const passwordHash = await bcrypt.hash(crypto.randomUUID(), 12);
+    const defaultName =
+      String(input.displayName ?? "").trim() ||
+      (email ? email.split("@")[0]! : `User-${firebaseUid.slice(0, 8)}`);
     user = await prisma.user.create({
       data: {
         firebaseUid,
-        phone,
+        phone: phone ?? undefined,
+        email: email ?? undefined,
         passwordHash,
         otpVerified: true,
         profile: {
           create: {
-            displayName: String(input.displayName ?? `User ${phone.slice(-4)}`),
+            displayName: defaultName,
             interests: []
           }
         },
@@ -236,15 +244,23 @@ export async function loginOrRegisterWithFirebasePhone(input: {
         }
       }
     });
-  } else if (!user.firebaseUid || user.firebaseUid !== firebaseUid) {
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        firebaseUid,
-        otpVerified: true,
-        phone
-      }
-    });
+  } else {
+    const needsUpdate =
+      !user.firebaseUid ||
+      user.firebaseUid !== firebaseUid ||
+      (phone != null && user.phone !== phone) ||
+      (email != null && !user.email);
+    if (needsUpdate) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          firebaseUid,
+          otpVerified: true,
+          ...(phone != null ? { phone } : {}),
+          ...(email != null && !user.email ? { email } : {})
+        }
+      });
+    }
   }
 
   const restriction = await getAccountRestriction(user.id);
@@ -260,14 +276,17 @@ export async function loginOrRegisterWithFirebasePhone(input: {
     );
   }
 
+  const identifier = phone ?? email ?? firebaseUid;
+  const reason = phone ? "FIREBASE_PHONE_LOGIN" : "FIREBASE_OAUTH_LOGIN";
+
   await prisma.loginEvent.create({
     data: {
       userId: user.id,
-      identifier: phone,
+      identifier,
       ipAddress: input.ipAddress,
       userAgent: input.userAgent,
       success: true,
-      reason: "FIREBASE_PHONE_LOGIN"
+      reason
     }
   });
 

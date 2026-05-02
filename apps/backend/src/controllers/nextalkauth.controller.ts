@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import {
-  loginOrRegisterWithFirebasePhone,
+  loginOrRegisterWithFirebaseIdentity,
   refreshTokens,
   loginWithEmailPassword,
   registerWithEmailPassword,
@@ -13,9 +13,10 @@ export async function loginWithFirebase(req: Request, res: Response) {
   const { idToken, displayName } = req.body as { idToken?: string; displayName?: string };
 
   const decoded = await verifyFirebaseIdToken(String(idToken ?? ""));
-  const data = await loginOrRegisterWithFirebasePhone({
+  const data = await loginOrRegisterWithFirebaseIdentity({
     firebaseUid: decoded.uid,
-    phoneNumber: decoded.phoneNumber,
+    phoneNumber: decoded.phoneNumber ?? null,
+    email: decoded.email ?? null,
     displayName,
     ipAddress: req.ip,
     userAgent: req.get("user-agent") ?? undefined
