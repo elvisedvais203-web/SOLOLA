@@ -29,6 +29,14 @@ function isBrowserProd(): boolean {
   return h !== "localhost" && h !== "127.0.0.1";
 }
 
+/**
+ * En prod navigateur, la base axios reste `/api` (proxy same-origin) par défaut.
+ * N’activer le backend en direct que si l’API expose un CORS correct pour ton domaine.
+ */
+function useBrowserDirectApi(): boolean {
+  return process.env.NEXT_PUBLIC_API_DIRECT === "1";
+}
+
 function pushUniqueApiBase(list: string[], raw: string | undefined): void {
   if (!raw?.trim()) return;
   const u = normalizeBackendApiUrl(raw.trim());
@@ -42,7 +50,7 @@ function pushUniqueApiBase(list: string[], raw: string | undefined): void {
 export async function getOrderedApiBases(): Promise<string[]> {
   const bases: string[] = [];
 
-  if (typeof window !== "undefined" && isBrowserProd() && process.env.NEXT_PUBLIC_API_VIA_PROXY !== "1") {
+  if (typeof window !== "undefined" && isBrowserProd() && useBrowserDirectApi()) {
     try {
       const r = await fetch("/api/__nextalk/backend", { cache: "no-store" });
       if (r.ok) {
@@ -72,7 +80,7 @@ export async function getOrderedApiBases(): Promise<string[]> {
 
 async function ensureClientDirectBackendBase(): Promise<void> {
   if (!isBrowserProd()) return;
-  if (process.env.NEXT_PUBLIC_API_VIA_PROXY === "1") return;
+  if (!useBrowserDirectApi()) return;
 
   const base = String(api.defaults.baseURL ?? "");
   if (base.startsWith("http://") || base.startsWith("https://")) return;
@@ -93,7 +101,7 @@ export async function prewarmClientApiBase(): Promise<void> {
 
 /** Force le repli Render par défaut (ex. nouvelle tentative après ERR_NETWORK). */
 export function forceApiDeployFallbackBase(): void {
-  if (isBrowserProd() && process.env.NEXT_PUBLIC_API_VIA_PROXY !== "1") {
+  if (isBrowserProd() && useBrowserDirectApi()) {
     api.defaults.baseURL = DEPLOY_FALLBACK_API_BASE;
   }
 }
@@ -147,7 +155,7 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const cfg = error?.config as (InternalAxiosRequestConfig & { _klBaseAttempt?: number }) | undefined;
-    if (typeof window !== "undefined" && cfg && isBrowserProd() && process.env.NEXT_PUBLIC_API_VIA_PROXY !== "1") {
+    if (typeof window !== "undefined" && cfg && isBrowserProd() && useBrowserDirectApi()) {
       const attempt = cfg._klBaseAttempt ?? 0;
       if (isRetriableApiFailure(error)) {
         const bases = await getOrderedApiBases();
