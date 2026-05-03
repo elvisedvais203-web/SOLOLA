@@ -16,6 +16,9 @@ services:
         value: https://solola-api.onrender.com/api
       - key: NEXT_PUBLIC_SOCKET_URL
         value: https://solola-api.onrender.com
+      # Proxy Next.js « /api/* » → backend (obligatoire en prod si le frontend n’est pas sur localhost).
+      - key: API_PROXY_TARGET
+        value: https://solola-api.onrender.com
       - key: NEXT_PUBLIC_APP_NAME
         value: Solola
       - key: NEXT_PUBLIC_PUSH_PUBLIC_KEY

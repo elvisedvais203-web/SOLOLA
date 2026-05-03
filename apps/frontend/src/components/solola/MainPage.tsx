@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -16,10 +16,11 @@ import {
   signInWithPhoneNumber,
   signInWithPopup,
   signOut,
-  updateProfile
+  updateProfile,
+  onAuthStateChanged
 } from "firebase/auth";
 import { getFirebaseAuth } from "../../nextalkfirebase";
-import { apiPostAuthWithResilience, prewarmClientApiBase } from "../../lib/nextalkapi";
+import { apiPostAuthWithResilience, isAxiosNetworkError, prewarmClientApiBase } from "../../lib/nextalkapi";
 import { isLoggedIn, storeSession } from "../../lib/nextalksession";
 import {
   FIREBASE_CONFIGURED,
@@ -125,53 +126,86 @@ export function MainPage() {
     resetBusy;
   const phoneBusy = oauthBusy !== null || emailBusy || resetBusy;
 
-  function resolveDisplayNameForBackend(firebaseUser: User): string | undefined {
-    const extra = profileDisplayName.trim();
-    if (intent === "register" && extra) return extra;
-    return firebaseUser.displayName ?? undefined;
-  }
-
-  const finishFirebaseUserSession = async (firebaseUser: User): Promise<boolean> => {
-    try {
-      const idToken = await firebaseUser.getIdToken(true);
-      const backend = await apiPostAuthWithResilience("/auth/firebase/verify", {
-        idToken,
-        displayName: resolveDisplayNameForBackend(firebaseUser)
-      });
-      storeSession({
-        accessToken: backend.data.tokens.accessToken,
-        refreshToken: backend.data.tokens.refreshToken,
-        user: backend.data.user
-      });
-      setStatusType("success");
-      setStatus(intent === "register" ? "Inscription réussie." : "Connexion réussie.");
-      router.replace(nextPath);
-      return true;
-    } catch (error: unknown) {
+  const finishFirebaseUserSession = useCallback(
+    async (firebaseUser: User, options?: { silent?: boolean }): Promise<boolean> => {
       try {
-        const a = firebaseAuth ?? getFirebaseAuth();
-        await signOut(a);
-      } catch {
-        /* ignore */
+        const extra = profileDisplayName.trim();
+        const displayName =
+          intent === "register" && extra ? extra : firebaseUser.displayName ?? undefined;
+
+        const idToken = await firebaseUser.getIdToken(true);
+        const backend = await apiPostAuthWithResilience("/auth/firebase/verify", {
+          idToken,
+          displayName
+        });
+        storeSession({
+          accessToken: backend.data.tokens.accessToken,
+          refreshToken: backend.data.tokens.refreshToken,
+          user: backend.data.user
+        });
+        if (!options?.silent) {
+          setStatusType("success");
+          setStatus(intent === "register" ? "Inscription réussie." : "Connexion réussie.");
+        }
+        router.replace(nextPath);
+        return true;
+      } catch (error: unknown) {
+        const ax = error as {
+          code?: string;
+          message?: string;
+          response?: { status?: number; data?: { message?: string } };
+        };
+        const status = ax?.response?.status;
+        const dataMsg = ax?.response?.data?.message;
+        const networkFail = isAxiosNetworkError(error) || (status !== undefined && status >= 500);
+        /** Ne déconnecte Firebase que si le jeton est refusé — pas en cas de panne réseau / API. */
+        const shouldSignOutFirebase = status === 401 || status === 400;
+
+        if (shouldSignOutFirebase) {
+          try {
+            const a = firebaseAuth ?? getFirebaseAuth();
+            await signOut(a);
+          } catch {
+            /* ignore */
+          }
+        }
+
+        let msg =
+          (typeof dataMsg === "string" && dataMsg) ||
+          ax?.message ||
+          "Le serveur n’a pas pu valider la session Firebase.";
+
+        if (typeof ax?.code === "string" && ax.code.startsWith("auth/")) {
+          msg = firebaseAuthUserMessage(error);
+        } else if (networkFail) {
+          msg =
+            "L’API Solola est injoignable ou en veille. Firebase t’a bien reconnu, mais il faut que le backend valide la connexion pour ouvrir l’accueil. Vérifie que le service API (ex. Render) est démarré et que le frontend a API_PROXY_TARGET ou BACKEND_URL vers la même URL que ton API. Réessaie dans un instant — une nouvelle tentative peut se faire automatiquement.";
+        } else if (
+          status === 500 &&
+          typeof dataMsg === "string" &&
+          /firebase|admin|configuration/i.test(dataMsg)
+        ) {
+          msg =
+            "Le backend ne peut pas vérifier les jetons Firebase : renseigne FIREBASE_SERVICE_ACCOUNT_JSON (ou FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY) sur le serveur API avec le même projet Firebase que l’app web.";
+        }
+
+        setStatus(msg);
+        setStatusType("error");
+        return false;
       }
-      const e = error as {
-        code?: string;
-        message?: string;
-        response?: { data?: { message?: string } };
-      };
-      if (typeof e?.code === "string" && e.code.startsWith("auth/")) {
-        setStatus(firebaseAuthUserMessage(error));
-      } else {
-        setStatus(
-          e?.response?.data?.message ??
-            e?.message ??
-            "Le serveur n’a pas pu valider la session Firebase. Réessaie."
-        );
-      }
-      setStatusType("error");
-      return false;
-    }
-  };
+    },
+    [intent, profileDisplayName, nextPath, router, firebaseAuth]
+  );
+
+  /** Si Firebase garde une session mais les JWT applicatifs ont été perdus, on récupère la session. */
+  useEffect(() => {
+    if (!firebaseAuth || !FIREBASE_CONFIGURED) return;
+    const unsub = onAuthStateChanged(firebaseAuth, (user) => {
+      if (!user || isLoggedIn()) return;
+      void finishFirebaseUserSession(user, { silent: true });
+    });
+    return () => unsub();
+  }, [firebaseAuth, finishFirebaseUserSession]);
 
   const signInWithGooglePopup = async () => {
     if (!FIREBASE_CONFIGURED || !firebaseAuth) return;
@@ -654,6 +688,27 @@ export function MainPage() {
                   </Link>
                   .
                 </p>
+
+                <details className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left text-[11px] text-slate-400">
+                  <summary className="cursor-pointer font-medium text-slate-300">
+                    SMS, e-mails ou page d’accueil bloqués ?
+                  </summary>
+                  <ul className="mt-2 list-inside list-disc space-y-2 text-slate-500">
+                    <li>
+                      <span className="font-semibold text-slate-400">Accueil</span> : la liste Firebase montre les comptes créés côté Firebase, mais l’app ouvre le tableau de bord seulement après que{" "}
+                      <strong className="text-slate-400">l’API Solola</strong> a validé le jeton (Render ou autre). Configure{" "}
+                      <code className="rounded bg-white/10 px-1 text-cyan-200/90">FIREBASE_*</code> Admin sur le backend (même projet que l’app web) ; sur le frontend (Vercel/Render) définis{" "}
+                      <code className="rounded bg-white/10 px-1 text-cyan-200/90">API_PROXY_TARGET</code> ou{" "}
+                      <code className="rounded bg-white/10 px-1 text-cyan-200/90">BACKEND_URL</code> vers l’origine de l’API, sans <code className="rounded bg-white/10 px-1">/api</code>.
+                    </li>
+                    <li>
+                      <span className="font-semibold text-slate-400">SMS</span> : pour de vrais numéros, active la facturation Blaze ; sinon utilise des numéros de test dans Firebase Authentication → Phone.
+                    </li>
+                    <li>
+                      <span className="font-semibold text-slate-400">E-mails</span> : vérifie courriers indésirables ; domaines autorisés dans Firebase ; pas de blocage côté fournisseur.
+                    </li>
+                  </ul>
+                </details>
 
                 <div id="recaptcha-container" className="hidden" />
               </AuthCard>
