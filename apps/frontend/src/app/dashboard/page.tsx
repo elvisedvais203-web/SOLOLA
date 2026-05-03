@@ -1,219 +1,123 @@
 ﻿"use client";
 
-import Link from "next/link";
-import { StoryBar, type StoryItem } from "../../components/nextalkstorybar";
+import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { AuthGuard } from "../../components/nextalkauthguard";
-import { useEffect, useMemo, useState } from "react";
-import { getStoryFeed } from "../../services/nextalkstories";
-import { getStoredUser } from "../../lib/nextalksession";
-import {
-  commentFeedPost,
-  createFeedPost,
-  getFeed,
-  getSuggestions,
-  likeFeedPost
-} from "../../services/nextalksocial";
-import { fetchCsrfToken } from "../../services/nextalksecurity";
+
+const initialPosts = Array.from({ length: 8 }, (_, i) => ({
+  id: `post-${i}`,
+  user: ["Amina", "Malik", "Nora", "Temba"][i % 4],
+  text: "Ambiance néon sur Solola ce soir. On partage nos idées, nos images et nos vibes.",
+  media: `https://picsum.photos/seed/solola-${i}/900/650`,
+  likes: 24 + i * 7,
+  comments: 3 + i
+}));
 
 export default function DashboardPage() {
-  const [storyItems, setStoryItems] = useState<StoryItem[]>([]);
-  const [feed, setFeed] = useState<any[]>([]);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [postInput, setPostInput] = useState("");
-  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
-  const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(true);
-  const me = typeof window !== "undefined" ? getStoredUser() : null;
+  const [posts, setPosts] = useState(initialPosts);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        const [stories, posts, sugg] = await Promise.all([
-          getStoryFeed().catch(() => []),
-          getFeed(25).catch(() => []),
-          getSuggestions(8).catch(() => [])
-        ]);
+  const filteredPosts = useMemo(
+    () => posts.filter((post) => post.user.toLowerCase().includes(query.toLowerCase()) || post.text.toLowerCase().includes(query.toLowerCase())),
+    [posts, query]
+  );
 
-        const items: StoryItem[] = (stories as any[]).map((s) => ({
-          id: s.id,
-          userId: s.user?.id ?? s.userId,
-          name: s.user?.profile?.displayName ?? s.user?.username ?? "Utilisateur",
-          avatar: s.user?.profile?.avatarUrl ?? undefined,
-          mediaUrl: s.mediaUrl,
-          mediaType: s.mediaType ?? "IMAGE",
-          caption: s.caption ?? undefined,
-          expiresAt: s.expiresAt,
-          viewCount: s.viewCount ?? undefined
-        }));
-        setStoryItems(items);
-        setFeed(posts as any[]);
-        setSuggestions(sugg as any[]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    void load();
-  }, []);
-
-  const canPublish = postInput.trim().length > 0;
-  const cleanedName = useMemo(() => me?.email?.split("@")[0] ?? me?.phone ?? "Vous", [me?.email, me?.phone]);
-
-  const publish = async () => {
-    if (!canPublish) return;
-    try {
-      const csrf = await fetchCsrfToken();
-      await createFeedPost({ content: postInput.trim() }, csrf);
-      setPostInput("");
-      setStatus("Publication envoyee.");
-      const posts = await getFeed(25);
-      setFeed(posts as any[]);
-    } catch {
-      setStatus("Echec de publication.");
-    }
-  };
-
-  const like = async (postId: string) => {
-    try {
-      const csrf = await fetchCsrfToken();
-      await likeFeedPost(postId, csrf);
-      const posts = await getFeed(25);
-      setFeed(posts as any[]);
-    } catch {
-      setStatus("Like impossible.");
-    }
-  };
-
-  const comment = async (postId: string) => {
-    const content = String(commentDrafts[postId] ?? "").trim();
-    if (!content) return;
-    try {
-      const csrf = await fetchCsrfToken();
-      await commentFeedPost(postId, content, csrf);
-      setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
-      const posts = await getFeed(25);
-      setFeed(posts as any[]);
-    } catch {
-      setStatus("Commentaire impossible.");
-    }
+  const loadMore = () => {
+    setLoadingMore(true);
+    setTimeout(() => {
+      setPosts((prev) => [
+        ...prev,
+        ...Array.from({ length: 4 }, (_, i) => ({
+          id: `more-${prev.length + i}`,
+          user: ["Elvis", "Maya", "Kioni"][i % 3],
+          text: "Nouveau post chargé en lazy loading pour un feed fluide et immersif.",
+          media: `https://picsum.photos/seed/solola-more-${prev.length + i}/900/650`,
+          likes: 12 + i * 4,
+          comments: 1 + i
+        }))
+      ]);
+      setLoadingMore(false);
+    }, 900);
   };
 
   return (
     <AuthGuard>
-      <section className="mx-auto grid max-w-6xl gap-6 pb-8 lg:grid-cols-[1fr_360px] animate-fade-in">
-        <div>
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Bonjour</p>
-              <h1 className="mt-1 font-heading text-2xl font-bold text-white">{cleanedName}</h1>
+      <section className="mx-auto grid max-w-7xl gap-6 pb-8 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-4">
+          <header className="glass rounded-3xl p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h1 className="font-heading text-2xl font-bold text-white">Bienvenue Elvis 👋</h1>
+              <div className="relative">
+                <button className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white">Notifications</button>
+                <motion.span
+                  className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-cyan-300"
+                  animate={{ scale: [1, 1.35, 1] }}
+                  transition={{ duration: 1.2, repeat: Infinity }}
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Link href="/stories" className="wa-pill px-3 py-2 text-xs">Stories</Link>
-              <Link href="/messages" className="wa-pill wa-pill-active px-3 py-2 text-xs font-semibold">Inbox</Link>
-            </div>
-          </div>
-
-          {storyItems.length > 0 ? (
-            <div className="glass rounded-3xl p-4">
-              <StoryBar items={storyItems} />
-            </div>
-          ) : null}
-
-          <div className="mt-4 glass rounded-3xl p-4">
-            <div className="flex items-center gap-2">
+            <div className="mt-3">
               <input
-                value={postInput}
-                onChange={(e) => setPostInput(e.target.value)}
-                className="input-neon flex-1 rounded-2xl px-4 py-3 text-sm"
-                placeholder="Partager une publication..."
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Rechercher dans le feed..."
+                className="input-neon w-full rounded-2xl px-4 py-3 text-sm"
               />
-              <button
-                onClick={() => void publish()}
-                disabled={!canPublish}
-                className="rounded-2xl bg-[#38d37f] px-4 py-3 text-sm font-semibold text-[#05101f] disabled:opacity-50"
-              >
-                Publier
-              </button>
             </div>
-            {status ? <p className="mt-2 text-xs text-slate-300">{status}</p> : null}
+          </header>
+
+          <div className="glass rounded-3xl p-4">
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              <button className="flex min-w-[90px] flex-col items-center gap-2 rounded-2xl border border-cyan-300/50 bg-white/5 p-2 text-xs text-white">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10">+</span>
+                Ajouter
+              </button>
+              {["Ayo", "Nina", "Kengo", "Liya", "Sami", "Yara"].map((name) => (
+                <button key={name} className="flex min-w-[90px] flex-col items-center gap-2 rounded-2xl border border-white/15 bg-white/5 p-2 text-xs text-white transition hover:scale-105 hover:border-cyan-300/50">
+                  <img src={`https://picsum.photos/seed/story-${name}/100/100`} alt={name} className="h-12 w-12 rounded-full object-cover" />
+                  {name}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="mt-4 space-y-4">
-            {loading ? (
+          <div className="space-y-4">
+            {filteredPosts.map((post, index) => (
+              <motion.article
+                key={post.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.04 }}
+                className="glass rounded-3xl p-4"
+              >
+                <div className="flex items-center gap-3">
+                  <img src={`https://picsum.photos/seed/avatar-${post.user}/100/100`} alt={post.user} className="h-10 w-10 rounded-full object-cover" />
+                  <div>
+                    <p className="text-sm font-semibold text-white">{post.user}</p>
+                    <p className="text-xs text-slate-400">Il y a quelques instants</p>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-slate-200">{post.text}</p>
+                <img src={post.media} alt="Publication" className="mt-3 h-72 w-full rounded-2xl object-cover" />
+                <div className="mt-3 flex gap-2">
+                  <button className="wa-pill px-3 py-2 text-xs">❤️ {post.likes}</button>
+                  <button className="wa-pill px-3 py-2 text-xs">💬 {post.comments}</button>
+                  <button className="wa-pill px-3 py-2 text-xs">↗ Partager</button>
+                </div>
+              </motion.article>
+            ))}
+
+            {loadingMore ? (
               <div className="glass rounded-3xl p-4">
-                <div className="h-4 w-40 animate-pulse rounded bg-white/10" />
+                <div className="h-4 w-36 animate-pulse rounded bg-white/10" />
                 <div className="mt-3 h-64 animate-pulse rounded-2xl bg-white/10" />
               </div>
-            ) : null}
-
-            {!loading && feed.length === 0 ? (
-              <div className="glass rounded-3xl p-6 text-center text-slate-300">
-                Aucun post pour le moment. Publie quelque chose pour demarrer le feed.
-              </div>
-            ) : null}
-
-            {!loading &&
-              feed.map((post) => (
-                <article key={post.id} className="glass rounded-3xl p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/10 text-xs font-bold text-white">
-                        {(post.author?.displayName ?? "U")[0]?.toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-white">{post.author?.displayName ?? "Utilisateur"}</p>
-                        <p className="text-xs text-slate-400">{new Date(post.createdAt).toLocaleString("fr-FR")}</p>
-                      </div>
-                    </div>
-                    <button className="wa-pill px-3 py-1 text-xs">...</button>
-                  </div>
-
-                  <p className="mt-3 whitespace-pre-wrap text-sm text-slate-200">{post.content}</p>
-                  {post.mediaUrl ? (
-                    <img src={post.mediaUrl} alt="media post" className="mt-3 max-h-[520px] w-full rounded-2xl object-cover" />
-                  ) : null}
-
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button onClick={() => void like(post.id)} className="wa-pill px-3 py-2 text-xs">
-                      <span className="inline-flex items-center gap-2">
-                        <span className={post.likedByMe ? "text-rose-300" : "text-slate-100"}>♥</span>
-                        {post.likesCount ?? 0}
-                      </span>
-                    </button>
-                    <button className="wa-pill px-3 py-2 text-xs" type="button">
-                      <span className="inline-flex items-center gap-2">
-                        <span>💬</span>
-                        {Array.isArray(post.comments) ? post.comments.length : 0}
-                      </span>
-                    </button>
-                    <Link href="/messages" className="wa-pill px-3 py-2 text-xs">
-                      ↗ Partager
-                    </Link>
-                  </div>
-
-                  {Array.isArray(post.comments) && post.comments.length > 0 ? (
-                    <div className="mt-3 space-y-2">
-                      {post.comments.slice(0, 3).map((comment: any) => (
-                        <div key={comment.id} className="rounded-2xl bg-white/5 px-3 py-2 text-xs text-slate-200">
-                          <span className="font-semibold">{comment.user?.displayName ?? "User"}</span>: {comment.content}
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <div className="mt-3 flex gap-2">
-                    <input
-                      value={commentDrafts[post.id] ?? ""}
-                      onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [post.id]: e.target.value }))}
-                      className="input-neon flex-1 rounded-2xl px-3 py-2 text-xs"
-                      placeholder="Ajouter un commentaire"
-                    />
-                    <button onClick={() => void comment(post.id)} className="wa-pill wa-pill-active px-3 py-2 text-xs font-semibold">
-                      Envoyer
-                    </button>
-                  </div>
-                </article>
-              ))}
+            ) : (
+              <button onClick={loadMore} className="btn-neon w-full rounded-2xl px-4 py-3 text-sm text-white">
+                Charger plus
+              </button>
+            )}
           </div>
         </div>
 
@@ -221,37 +125,21 @@ export default function DashboardPage() {
           <div className="glass rounded-3xl p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Suggestions</p>
             <div className="mt-3 space-y-2">
-              {suggestions.map((item) => (
-                <div key={item.userId} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-3 py-2">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{item.displayName}</p>
-                    <p className="text-xs text-slate-400">{item.city ?? "RDC"}</p>
-                  </div>
-                  <Link href="/network" className="wa-pill wa-pill-active px-3 py-2 text-xs font-semibold">
-                    Voir
-                  </Link>
+              {["Lina", "Baki", "Tino"].map((name) => (
+                <div key={name} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-3 py-2">
+                  <p className="text-sm text-white">{name}</p>
+                  <button className="wa-pill px-3 py-1 text-xs">Suivre</button>
                 </div>
               ))}
-              {suggestions.length === 0 ? <p className="text-sm text-slate-400">Aucune suggestion.</p> : null}
             </div>
           </div>
-
           <div className="glass rounded-3xl p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Raccourcis</p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <Link href="/messages" className="wa-pill wa-pill-active px-3 py-2 text-center font-semibold">
-                Inbox
-              </Link>
-              <Link href="/stories" className="wa-pill px-3 py-2 text-center">
-                Stories
-              </Link>
-              <Link href="/discover" className="wa-pill px-3 py-2 text-center">
-                Explorer
-              </Link>
-              <Link href="/settings" className="wa-pill px-3 py-2 text-center">
-                Reglages
-              </Link>
-            </div>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Tendances</p>
+            <ul className="mt-3 space-y-2 text-sm text-slate-200">
+              <li>#AfroFutureDesign</li>
+              <li>#KinshasaStories</li>
+              <li>#SololaCreators</li>
+            </ul>
           </div>
         </aside>
       </section>

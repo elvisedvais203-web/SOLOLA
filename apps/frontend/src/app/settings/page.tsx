@@ -1,806 +1,231 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { AuthGuard } from "../../components/nextalkauthguard";
-import { SectionHeader } from "../../components/nextalksectionheader";
-import { logoutSession } from "../../lib/nextalksession";
-import {
-  DEFAULT_PREFERENCES,
-  applyPreferencesToDocument,
-  getStoredPreferences,
-  saveStoredPreferences,
-  type ChatTheme,
-  type UserPreferences,
-  type VoiceTranscriptMode
-} from "../../lib/nextalkpreferences";
-import { fetchCsrfToken } from "../../services/nextalksecurity";
-import api from "../../lib/nextalkapi";
-import {
-  archiveConversation,
-  clearAllConversations,
-  deleteAllConversations,
-  getChatMessages,
-  getConversations
-} from "../../services/nextalkchat";
 
-type SettingsTab = "compte" | "discussion" | "confidentialite" | "media" | "notifications" | "securite" | "abonnement";
-type DangerAction = "clear" | "delete" | "account";
-
-function SettingSwitch({
-  label,
-  description,
-  checked,
-  onChange
-}: {
-  label: string;
+type RowType = "toggle" | "link" | "value";
+type Row = {
+  id: string;
+  icon: string;
+  title: string;
   description?: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
+  type: RowType;
+  keyName?: string;
+  value?: string;
+};
+type Section = { id: string; title: string; rows: Row[] };
+
+const SETTINGS_SECTIONS: Section[] = [
+  { id: "compte", title: "Compte", rows: [
+    { id: "profil", icon: "👤", title: "Modifier le profil", description: "Nom, bio, photo et liens", type: "link" },
+    { id: "email", icon: "✉️", title: "Email principal", description: "Gérer l'adresse de connexion", type: "value", value: "elvis@solola.app" },
+    { id: "username", icon: "#️⃣", title: "Nom d'utilisateur", description: "Votre identifiant public", type: "value", value: "@elvis.solola" }
+  ]},
+  { id: "securite", title: "Sécurité", rows: [
+    { id: "2fa", icon: "🛡️", title: "Double authentification", description: "Code de sécurité à la connexion", type: "toggle", keyName: "twoFactor" },
+    { id: "biometrie", icon: "🧬", title: "Verrouillage biométrique", description: "Protéger l'accès à l'app", type: "toggle", keyName: "biometricLock" },
+    { id: "sessions", icon: "📱", title: "Sessions actives", description: "Appareils actuellement connectés", type: "link" }
+  ]},
+  { id: "confidentialite", title: "Confidentialité", rows: [
+    { id: "private", icon: "🔒", title: "Compte privé", description: "Valider les abonnés manuellement", type: "toggle", keyName: "privateAccount" },
+    { id: "online", icon: "🟢", title: "Statut en ligne", description: "Afficher votre présence", type: "toggle", keyName: "showOnline" },
+    { id: "blocked", icon: "🚫", title: "Comptes bloqués", description: "Gérer vos restrictions", type: "link" }
+  ]},
+  { id: "notifications", title: "Notifications", rows: [
+    { id: "notifPush", icon: "🔔", title: "Notifications push", description: "Messages, likes, appels", type: "toggle", keyName: "pushNotifications" },
+    { id: "notifEmail", icon: "📩", title: "Notifications email", description: "Résumé quotidien et sécurité", type: "toggle", keyName: "emailNotifications" },
+    { id: "notifSound", icon: "🔊", title: "Sons système", description: "Feedback sonore de l'app", type: "toggle", keyName: "soundEffects" }
+  ]},
+  { id: "medias", title: "Médias & contenu", rows: [
+    { id: "quality", icon: "🎬", title: "Qualité des médias", description: "Lecture HD automatique", type: "toggle", keyName: "hdMedia" },
+    { id: "autoplay", icon: "▶️", title: "Autoplay des vidéos", description: "Reels et stories automatiques", type: "toggle", keyName: "autoplayVideos" },
+    { id: "content", icon: "🧹", title: "Filtre contenu sensible", description: "Modération intelligente", type: "link" }
+  ]},
+  { id: "data", title: "Données & stockage", rows: [
+    { id: "storage", icon: "💾", title: "Stockage local", description: "Cache des médias et conversations", type: "link" },
+    { id: "backup", icon: "☁️", title: "Sauvegarde cloud", description: "Synchronisation automatique", type: "toggle", keyName: "cloudBackup" },
+    { id: "export", icon: "📦", title: "Exporter mes données", description: "Archive complète du compte", type: "link" }
+  ]},
+  { id: "apparence", title: "Apparence", rows: [
+    { id: "dark", icon: "🌙", title: "Dark mode", description: "Thème sombre néon", type: "toggle", keyName: "darkMode" },
+    { id: "theme", icon: "🎨", title: "Palette d'interface", description: "Néon, classique, minimal", type: "link" },
+    { id: "font", icon: "🔠", title: "Taille du texte", description: "Confort de lecture", type: "link" }
+  ]},
+  { id: "accessibilite", title: "Accessibilité", rows: [
+    { id: "contrast", icon: "⚫", title: "Contraste élevé", description: "Lisibilité renforcée", type: "toggle", keyName: "highContrast" },
+    { id: "reduce", icon: "🌀", title: "Réduire les animations", description: "Transitions plus douces", type: "toggle", keyName: "reducedMotion" },
+    { id: "voice", icon: "🗣️", title: "Assistances vocales", description: "Navigation et dictée", type: "link" }
+  ]},
+  { id: "messages", title: "Messages & appels", rows: [
+    { id: "readReceipts", icon: "✅", title: "Accusés de lecture", description: "Afficher Lu / Reçu", type: "toggle", keyName: "readReceipts" },
+    { id: "encryption", icon: "🔐", title: "Chiffrement renforcé", description: "Protection avancée des échanges", type: "toggle", keyName: "secureMessaging" },
+    { id: "callPrefs", icon: "📞", title: "Préférences d'appel", description: "Audio, vidéo, qualité", type: "link" }
+  ]},
+  { id: "canaux", title: "Canaux & contenu", rows: [
+    { id: "channelSuggest", icon: "📡", title: "Suggestions de canaux", description: "Découverte personnalisée", type: "toggle", keyName: "channelSuggestions" },
+    { id: "autofollow", icon: "🧭", title: "Suivi automatique des tendances", description: "Activer les recommandations", type: "toggle", keyName: "autoTrendFollow" },
+    { id: "creator", icon: "🧑‍💻", title: "Outils créateurs", description: "Monétisation et analytics", type: "link" }
+  ]},
+  { id: "ia", title: "IA & personnalisation", rows: [
+    { id: "aiFeed", icon: "🤖", title: "Feed intelligent", description: "Optimiser l'ordre des contenus", type: "toggle", keyName: "aiFeed" },
+    { id: "aiSafety", icon: "🧠", title: "Filtrage IA de sécurité", description: "Détection proactive des abus", type: "toggle", keyName: "aiSafety" },
+    { id: "aiPersona", icon: "✨", title: "Persona Solola", description: "Configurer votre expérience IA", type: "link" }
+  ]},
+  { id: "devices", title: "Appareils & connexions", rows: [
+    { id: "deviceList", icon: "🖥️", title: "Mes appareils", description: "Sessions desktop et mobile", type: "link" },
+    { id: "wifiOnly", icon: "📶", title: "Upload uniquement en Wi‑Fi", description: "Économie de données", type: "toggle", keyName: "wifiOnlyUpload" },
+    { id: "bluetooth", icon: "🛰️", title: "Connexion accessoires", description: "Audio et périphériques", type: "link" }
+  ]},
+  { id: "billing", title: "Facturation / abonnement", rows: [
+    { id: "plan", icon: "💳", title: "Plan actuel", description: "Solola Pro Mensuel", type: "value", value: "Actif" },
+    { id: "payment", icon: "🏦", title: "Moyens de paiement", description: "Carte et mobile money", type: "link" },
+    { id: "invoices", icon: "🧾", title: "Factures", description: "Historique de paiement", type: "link" }
+  ]},
+  { id: "advanced", title: "Avancé (développeur)", rows: [
+    { id: "debug", icon: "🧪", title: "Mode debug UI", description: "Afficher les informations techniques", type: "toggle", keyName: "debugUI" },
+    { id: "logs", icon: "📘", title: "Journaux applicatifs", description: "Diagnostiquer l'app", type: "link" },
+    { id: "api", icon: "🛠️", title: "Paramètres API", description: "Endpoints et sandbox", type: "link" }
+  ]},
+  { id: "support", title: "Support", rows: [
+    { id: "help", icon: "❓", title: "Centre d'aide", description: "FAQ, guides et tutoriels", type: "link" },
+    { id: "contact", icon: "💬", title: "Contacter le support", description: "Assistance Solola 24/7", type: "link" },
+    { id: "report", icon: "⚠️", title: "Signaler un problème", description: "Bug, abus ou incident", type: "link" }
+  ]},
+  { id: "danger", title: "Déconnexion / suppression", rows: [
+    { id: "logout", icon: "🚪", title: "Se déconnecter", description: "Fermer la session actuelle", type: "link" },
+    { id: "delete", icon: "🗑️", title: "Supprimer le compte", description: "Action irréversible", type: "link" }
+  ]}
+];
+
+function IOSSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
   return (
-    <label className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 p-3">
-      <div>
-        <p className="text-sm text-white">{label}</p>
-        {description ? <p className="text-xs text-slate-400">{description}</p> : null}
-      </div>
-      <input type="checkbox" className="h-5 w-5" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-    </label>
-  );
-}
-
-function SettingCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="glass rounded-3xl p-4">
-      <p className="text-xs uppercase tracking-[0.18em] text-gold">{title}</p>
-      <div className="mt-3 space-y-3">{children}</div>
-    </div>
-  );
-}
-
-function DangerConfirmModal({
-  action,
-  value,
-  busy,
-  onValueChange,
-  onCancel,
-  onConfirm
-}: {
-  action: DangerAction;
-  value: string;
-  busy: boolean;
-  onValueChange: (v: string) => void;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const [armCountdown, setArmCountdown] = useState(3);
-
-  useEffect(() => {
-    setArmCountdown(3);
-    const timer = window.setInterval(() => {
-      setArmCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
-    }, 1000);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [action]);
-
-  const keyword = action === "clear" ? "EFFACER" : "SUPPRIMER";
-  const title =
-    action === "clear"
-      ? "Confirmer effacement global"
-      : action === "delete"
-        ? "Confirmer suppression globale"
-        : "Confirmer suppression du compte";
-  const desc =
-    action === "clear"
-      ? "Cette action efface vos messages et archive vos conversations."
-      : action === "delete"
-        ? "Cette action retire vos participations et peut supprimer des conversations orphelines."
-        : "Cette action est irreversible et supprime vos donnees utilisateur.";
-  const canConfirm = value.trim().toUpperCase() === keyword && armCountdown === 0;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="glass w-full max-w-lg rounded-3xl p-5">
-        <h3 className="font-heading text-xl text-white">{title}</h3>
-        <p className="mt-2 text-sm text-slate-300">{desc}</p>
-        <p className="mt-2 text-xs text-slate-400">
-          Tapez <span className="font-bold text-gold">{keyword}</span> pour confirmer.
-        </p>
-        <input
-          aria-label="Mot de confirmation"
-          value={value}
-          onChange={(event) => onValueChange(event.target.value)}
-          placeholder={keyword}
-          className="mt-3 w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2 text-sm outline-none"
-          autoFocus
-        />
-        <div className="mt-4 flex gap-2">
-          <button onClick={onCancel} disabled={busy} className="rounded-xl border border-white/20 px-4 py-2 text-sm text-slate-200 disabled:opacity-60">
-            Annuler
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={busy || !canConfirm}
-            className="rounded-xl border border-red-500/40 bg-red-500/20 px-4 py-2 text-sm text-red-100 disabled:opacity-50"
-          >
-            {busy ? "Traitement..." : "Confirmer"}
-          </button>
-        </div>
-        {armCountdown > 0 ? (
-          <p className="mt-2 text-xs text-amber-300">Confirmation disponible dans {armCountdown}s</p>
-        ) : (
-          <p className="mt-2 text-xs text-emerald-300">Verification prete</p>
-        )}
-      </div>
-    </div>
+    <motion.button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`relative h-7 w-12 rounded-full transition ${checked ? "bg-[#34C759]" : "bg-white/20"}`}
+      animate={{ backgroundColor: checked ? "#34C759" : "rgba(255,255,255,0.2)" }}
+      transition={{ duration: 0.2 }}
+    >
+      <motion.span
+        className="absolute top-0.5 h-6 w-6 rounded-full bg-white shadow"
+        animate={{ x: checked ? 23 : 2 }}
+        transition={{ type: "spring", stiffness: 420, damping: 28 }}
+      />
+    </motion.button>
   );
 }
 
 export default function SettingsPage() {
-  const router = useRouter();
-  const [tab, setTab] = useState<SettingsTab>("compte");
-  const [prefs, setPrefs] = useState<UserPreferences>(() => getStoredPreferences());
-  const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [search, setSearch] = useState("");
-  const [geoBusy, setGeoBusy] = useState(false);
-  const [dangerAction, setDangerAction] = useState<DangerAction | null>(null);
-  const [dangerValue, setDangerValue] = useState("");
-  const [planTier, setPlanTier] = useState<"FREE" | "PRO">("FREE");
-  const [twoFaEnabled, setTwoFaEnabled] = useState(false);
-  const [sessionLock, setSessionLock] = useState(false);
+  const [query, setQuery] = useState("");
+  const [feedback, setFeedback] = useState("Tous les paramètres sont synchronisés localement.");
+  const [toggles, setToggles] = useState<Record<string, boolean>>({
+    darkMode: true,
+    pushNotifications: true,
+    emailNotifications: false,
+    soundEffects: true,
+    twoFactor: true,
+    biometricLock: false,
+    privateAccount: false,
+    showOnline: true,
+    hdMedia: true,
+    autoplayVideos: true,
+    cloudBackup: true,
+    highContrast: false,
+    reducedMotion: false,
+    readReceipts: true,
+    secureMessaging: true,
+    channelSuggestions: true,
+    autoTrendFollow: false,
+    aiFeed: true,
+    aiSafety: true,
+    wifiOnlyUpload: false,
+    debugUI: false
+  });
 
-  const setPref = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
-    setPrefs((prev) => ({ ...prev, [key]: value }));
-  };
+  const filteredSections = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return SETTINGS_SECTIONS;
+    return SETTINGS_SECTIONS
+      .map((section) => ({
+        ...section,
+        rows: section.rows.filter((row) =>
+          `${row.title} ${row.description ?? ""}`.toLowerCase().includes(q)
+        )
+      }))
+      .filter((section) => section.rows.length > 0);
+  }, [query]);
 
-  useEffect(() => {
-    let active = true;
-    api
-      .get("/profile/me")
-      .then((res) => {
-        if (!active) {
-          return;
-        }
-        const settings = res.data?.user?.settings;
-        if (!settings) {
-          return;
-        }
-        setPrefs((prev) => ({
-          ...prev,
-          language: settings.language ?? prev.language,
-          theme: String(settings.theme ?? "DARK").toLowerCase() === "light" ? "light" : "dark",
-          chatTheme: String(settings.chatTheme ?? "CLASSIC").toLowerCase() as ChatTheme,
-          chatAnimations: Boolean(settings.chatAnimations ?? prev.chatAnimations),
-          readReceipts: Boolean(settings.readReceipts ?? prev.readReceipts),
-          autoSaveMedia: Boolean(settings.autoSaveMedia ?? prev.autoSaveMedia),
-          voiceTranscriptMode: (settings.voiceTranscriptMode ?? prev.voiceTranscriptMode) as VoiceTranscriptMode,
-          profileVisibility: settings.profileVisibility ?? prev.profileVisibility,
-          messagePolicy: settings.messagePolicy ?? prev.messagePolicy,
-          hideOnlineStatus: Boolean(settings.hideOnlineStatus ?? prev.hideOnlineStatus),
-          notifMessages: Boolean(settings.notifMessages ?? prev.notifMessages),
-          notifLikes: Boolean(settings.notifLikes ?? prev.notifLikes),
-          notifCalls: Boolean(settings.notifCalls ?? prev.notifCalls),
-          dataSaver: Boolean(res.data?.user?.dataSaverEnabled ?? prev.dataSaver),
-          invisibleMode: Boolean(res.data?.user?.invisibleMode ?? prev.invisibleMode)
-        }));
-      })
-      .catch(() => undefined);
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const saveAll = async () => {
-    if (prefs.ageMin > prefs.ageMax) {
-      setStatus("L’âge minimum doit être inférieur ou égal à l’âge maximum.");
-      return;
-    }
-
-    try {
-      setBusy(true);
-      const csrf = await fetchCsrfToken();
-      await api.patch(
-        "/profile/me",
-        {
-          dataSaverEnabled: prefs.dataSaver,
-          invisibleMode: prefs.invisibleMode
-        },
-        {
-          headers: { "x-csrf-token": csrf }
-        }
-      );
-
-      await api.patch(
-        "/profile/settings",
-        {
-          language: prefs.language,
-          theme: prefs.theme,
-          chatTheme: prefs.chatTheme,
-          chatAnimations: prefs.chatAnimations,
-          readReceipts: prefs.readReceipts,
-          autoSaveMedia: prefs.autoSaveMedia,
-          voiceTranscriptMode: prefs.voiceTranscriptMode,
-          profileVisibility: prefs.profileVisibility,
-          messagePolicy: prefs.messagePolicy,
-          hideOnlineStatus: prefs.hideOnlineStatus,
-          notifMessages: prefs.notifMessages,
-          notifLikes: prefs.notifLikes,
-          notifCalls: prefs.notifCalls
-        },
-        {
-          headers: { "x-csrf-token": csrf }
-        }
-      );
-
-      saveStoredPreferences(prefs);
-      applyPreferencesToDocument(prefs);
-      setStatus("Paramètres enregistrés et appliqués dans toute l’application.");
-    } catch {
-      setStatus("Échec d’enregistrement des paramètres. Veuillez réessayer.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resetAll = () => {
-    setPrefs(DEFAULT_PREFERENCES);
-    saveStoredPreferences(DEFAULT_PREFERENCES);
-    applyPreferencesToDocument(DEFAULT_PREFERENCES);
-    setStatus("Paramètres réinitialisés.");
-  };
-
-  const exportDiscussions = async () => {
-    try {
-      setBusy(true);
-      const conversations = await getConversations({ archived: false });
-      const payload = await Promise.all(
-        conversations.slice(0, 30).map(async (conversation) => {
-          const data = await getChatMessages(conversation.id, { limit: 100 });
-          return {
-            conversation: {
-              id: conversation.id,
-              title: conversation.title,
-              kind: conversation.kind,
-              archived: conversation.archived
-            },
-            messages: data.items
-          };
-        })
-      );
-
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `nextalk-discussions-${Date.now()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setStatus("Export des discussions terminé.");
-    } catch {
-      setStatus("Export impossible pour le moment.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const archiveEverything = async () => {
-    try {
-      setBusy(true);
-      const csrf = await fetchCsrfToken();
-      const conversations = await getConversations({ archived: false });
-      await Promise.all(conversations.map((item) => archiveConversation(item.id, true, csrf)));
-      setStatus("Toutes les discussions ont ete archivees.");
-    } catch {
-      setStatus("Impossible d'archiver toutes les discussions.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const clearEverything = async () => {
-    try {
-      setBusy(true);
-      const csrf = await fetchCsrfToken();
-      const result = await clearAllConversations(csrf);
-      setStatus(
-        `Discussions effacees: ${result.messagesCleared} messages nettoyes, ${result.archived} conversations archivees.`
-      );
-    } catch {
-      setStatus("Impossible d'effacer toutes les discussions.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const deleteEverything = async () => {
-    try {
-      setBusy(true);
-      const csrf = await fetchCsrfToken();
-      const result = await deleteAllConversations(csrf);
-      setStatus(
-        `Discussions supprimees: ${result.membershipsRemoved} participations retirees, ${result.orphanChatsRemoved} chats orphelins supprimes.`
-      );
-    } catch {
-      setStatus("Impossible de supprimer toutes les discussions.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const deleteAccount = async () => {
-    try {
-      setBusy(true);
-      const csrf = await fetchCsrfToken();
-      await api.delete("/profile/me", {
-        headers: { "x-csrf-token": csrf },
-        data: { confirmation: "SUPPRIMER" }
-      });
-      logoutSession();
-      router.replace("/");
-    } catch {
-      setStatus("Impossible de supprimer le compte pour le moment.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openDangerModal = (action: DangerAction) => {
-    setDangerAction(action);
-    setDangerValue("");
-  };
-
-  const closeDangerModal = () => {
-    if (busy) {
-      return;
-    }
-    setDangerAction(null);
-    setDangerValue("");
-  };
-
-  const confirmDangerAction = async () => {
-    if (!dangerAction) {
-      return;
-    }
-    if (dangerAction === "clear") {
-      await clearEverything();
-    } else if (dangerAction === "delete") {
-      await deleteEverything();
-    } else {
-      await deleteAccount();
-    }
-    setDangerAction(null);
-    setDangerValue("");
-  };
-
-  const tabs = useMemo(
-    () => [
-      { id: "compte" as const, label: "Compte" },
-      { id: "discussion" as const, label: "Discussions" },
-      { id: "confidentialite" as const, label: "Confidentialité" },
-      { id: "media" as const, label: "Médias" },
-      { id: "notifications" as const, label: "Notifications" },
-      { id: "securite" as const, label: "Sécurité" },
-      { id: "abonnement" as const, label: "Abonnement" }
-    ],
-    []
-  );
-
-  const filteredTabs = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return tabs;
-    return tabs.filter((t) => t.label.toLowerCase().includes(q));
-  }, [search, tabs]);
-
-  const updateLocation = async () => {
-    if (typeof window === "undefined" || !("geolocation" in navigator)) {
-      setStatus("Géolocalisation indisponible sur cet appareil.");
-      return;
-    }
-    try {
-      setGeoBusy(true);
-      const coords = await new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-          (err) => reject(err),
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 60_000 }
-        );
-      });
-      const csrf = await fetchCsrfToken();
-      await api.patch(
-        "/profile/me",
-        { latitude: coords.latitude, longitude: coords.longitude },
-        { headers: { "x-csrf-token": csrf } }
-      );
-      setStatus("Emplacement mis à jour.");
-    } catch {
-      setStatus("Impossible de récupérer l’emplacement. Vérifiez les permissions.");
-    } finally {
-      setGeoBusy(false);
-    }
+  const updateToggle = (key: string, value: boolean, title: string) => {
+    setToggles((prev) => ({ ...prev, [key]: value }));
+    setFeedback(`${title} ${value ? "activé" : "désactivé"} avec succès.`);
   };
 
   return (
     <AuthGuard>
-      <section className="pb-8">
-        <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-          <aside className="glass rounded-3xl p-4 lg:sticky lg:top-24 lg:self-start">
-            <p className="font-heading text-xl text-white">Paramètres</p>
-            <div className="mt-3">
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Recherche"
-                className="input-neon w-full rounded-2xl px-3 py-2 text-sm"
-              />
-            </div>
+      <section className="mx-auto max-w-5xl pb-10">
+        <div className="mb-4">
+          <h1 className="font-heading text-3xl font-bold text-white">Paramètres</h1>
+          <p className="mt-1 text-sm text-slate-400">Configuration complète de ton expérience Solola.</p>
+        </div>
 
-            <div className="mt-4 space-y-2">
-              {filteredTabs.map((item) => {
-                const active = tab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setTab(item.id)}
-                    className={`w-full rounded-2xl px-4 py-3 text-left text-sm transition ${
-                      active ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-          </aside>
+        <div className="glass mb-4 rounded-2xl p-3">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Rechercher un réglage..."
+            className="input-neon w-full rounded-xl px-3 py-2 text-sm"
+          />
+        </div>
 
-          <div>
-            <SectionHeader
-              title="Paramètres"
-            />
-
-            {/* menu onglets remplace par sidebar */}
-
-        {tab === "compte" && (
-          <div className="grid gap-4 xl:grid-cols-2">
-            <SettingCard title="Votre compte">
-              <div>
-                <label className="text-sm text-slate-300">Distance maximale : {prefs.distanceKm} km</label>
-                <input type="range" min={5} max={200} step={5} value={prefs.distanceKm} onChange={(event) => setPref("distanceKm", Number(event.target.value))} aria-label="Distance maximale" className="mt-2 w-full" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm text-slate-300">
-                  Âge min
-                  <input type="number" min={18} max={70} value={prefs.ageMin} onChange={(event) => setPref("ageMin", Number(event.target.value))} className="mt-1 w-full rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-white" />
-                </label>
-                <label className="text-sm text-slate-300">
-                  Âge max
-                  <input type="number" min={18} max={80} value={prefs.ageMax} onChange={(event) => setPref("ageMax", Number(event.target.value))} className="mt-1 w-full rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-white" />
-                </label>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { key: "SERIOUS", label: "Serieux" },
-                  { key: "MARRIAGE", label: "Mariage" },
-                  { key: "FRIENDSHIP", label: "Amitie" },
-                  { key: "FUN", label: "Fun" }
-                ].map((item) => (
-                  <button
-                    key={item.key}
-                    onClick={() => setPref("relationshipType", item.key as UserPreferences["relationshipType"])}
-                    className={`rounded-xl px-3 py-2 text-sm ${prefs.relationshipType === item.key ? "bg-neoblue/25 text-neoblue" : "bg-white/10 text-slate-300"}`}
-                  >
-                    {item.label}
-                  </button>
+        <AnimatePresence mode="popLayout">
+          {filteredSections.map((section, sectionIndex) => (
+            <motion.div
+              key={section.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ delay: sectionIndex * 0.02 }}
+              className="mb-4"
+            >
+              <p className="mb-2 px-1 text-xs uppercase tracking-[0.18em] text-slate-400">{section.title}</p>
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-lg">
+                {section.rows.map((row, rowIndex) => (
+                  <div key={row.id} className={`flex items-center gap-3 px-3 py-3 ${rowIndex !== section.rows.length - 1 ? "border-b border-white/10" : ""}`}>
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm">{row.icon}</div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-white">{row.title}</p>
+                      {row.description ? <p className="truncate text-xs text-slate-400">{row.description}</p> : null}
+                    </div>
+                    {row.type === "toggle" && row.keyName ? (
+                      <IOSSwitch checked={Boolean(toggles[row.keyName])} onChange={(value) => updateToggle(row.keyName!, value, row.title)} />
+                    ) : null}
+                    {row.type === "value" ? <span className="text-xs text-slate-300">{row.value}</span> : null}
+                    {row.type !== "toggle" ? (
+                      <button
+                        type="button"
+                        onClick={() => setFeedback(`Navigation ouverte : ${row.title}`)}
+                        className="rounded-lg px-2 py-1 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                        aria-label={`Ouvrir ${row.title}`}
+                      >
+                        ›
+                      </button>
+                    ) : null}
+                  </div>
                 ))}
               </div>
-            </SettingCard>
+            </motion.div>
+          ))}
+        </AnimatePresence>
 
-            <SettingCard title="Langue et apparence">
-              <div>
-                <p className="text-sm text-slate-300">Langue</p>
-                <div className="mt-2 flex gap-2">
-                  {(["FR", "SW", "EN"] as const).map((lang) => (
-                    <button
-                      key={lang}
-                      onClick={() => setPref("language", lang)}
-                      className={`rounded-xl px-3 py-2 text-sm ${prefs.language === lang ? "bg-neoblue/25 text-neoblue" : "bg-white/10 text-slate-300"}`}
-                    >
-                      {lang}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm text-slate-300">Thème global</p>
-                <div className="mt-2 flex gap-2">
-                  <button onClick={() => setPref("theme", "dark")} className={`rounded-xl px-3 py-2 text-sm ${prefs.theme === "dark" ? "bg-neoblue/25 text-neoblue" : "bg-white/10 text-slate-300"}`}>Sombre</button>
-                  <button onClick={() => setPref("theme", "light")} className={`rounded-xl px-3 py-2 text-sm ${prefs.theme === "light" ? "bg-neoblue/25 text-neoblue" : "bg-white/10 text-slate-300"}`}>Clair</button>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm text-slate-300">Thème de discussion</p>
-                <div className="mt-2 flex gap-2">
-                  {[
-                    { key: "classic", label: "Classique" },
-                    { key: "aqua", label: "Aqua" },
-                    { key: "sunset", label: "Sunset" }
-                  ].map((item) => (
-                    <button
-                      key={item.key}
-                      onClick={() => setPref("chatTheme", item.key as ChatTheme)}
-                      className={`rounded-xl px-3 py-2 text-sm ${prefs.chatTheme === item.key ? "bg-neoblue/25 text-neoblue" : "bg-white/10 text-slate-300"}`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </SettingCard>
-
-            <SettingCard title="Emplacement">
-              <button
-                onClick={() => void updateLocation()}
-                disabled={geoBusy}
-                className="btn-outline-neon w-full rounded-xl px-4 py-2 text-left text-sm disabled:opacity-60"
-              >
-                {geoBusy ? "Mise à jour..." : "Mettre à jour l’emplacement"}
-              </button>
-            </SettingCard>
-
-            <SettingCard title="Infos & liens utiles">
-              <div className="grid gap-2">
-                <Link href="/channels" className="btn-neon w-full rounded-xl px-4 py-2 text-left text-sm">
-                  Créer un nouveau canal
-                </Link>
-                <Link href="/about" className="btn-outline-neon w-full rounded-xl px-4 py-2 text-left text-sm">
-                  À propos
-                </Link>
-                <Link href="/help" className="btn-outline-neon w-full rounded-xl px-4 py-2 text-left text-sm">
-                  Aide
-                </Link>
-                <Link href="/safety" className="btn-outline-neon w-full rounded-xl px-4 py-2 text-left text-sm">
-                  Sécurité
-                </Link>
-                <Link href="/contact" className="btn-outline-neon w-full rounded-xl px-4 py-2 text-left text-sm">
-                  Contact
-                </Link>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Link href="/legal/terms" className="btn-outline-neon w-full rounded-xl px-4 py-2 text-left text-sm">
-                    Conditions
-                  </Link>
-                  <Link href="/legal/privacy" className="btn-outline-neon w-full rounded-xl px-4 py-2 text-left text-sm">
-                    Confidentialité
-                  </Link>
-                  <Link href="/legal/cookies" className="btn-outline-neon w-full rounded-xl px-4 py-2 text-left text-sm">
-                    Cookies
-                  </Link>
-                </div>
-              </div>
-            </SettingCard>
-          </div>
-        )}
-
-        {tab === "discussion" && (
-          <div className="grid gap-4 xl:grid-cols-2">
-            <SettingCard title="Conversations">
-              <SettingSwitch label="Animations" description="Transitions et animations dans les discussions" checked={prefs.chatAnimations} onChange={(value) => setPref("chatAnimations", value)} />
-              <SettingSwitch label="Accusés de lecture" description="Afficher l’état Envoyé / Lu" checked={prefs.readReceipts} onChange={(value) => setPref("readReceipts", value)} />
-              <SettingSwitch label="Téléchargement rapide des médias" description="Afficher les actions de téléchargement sur les médias" checked={prefs.autoSaveMedia} onChange={(value) => setPref("autoSaveMedia", value)} />
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                <p className="text-sm text-white">Transcrire les messages vocaux</p>
-                <div className="mt-2 flex gap-2">
-                  {[
-                    { key: "NEVER", label: "Jamais" },
-                    { key: "MANUAL", label: "Manuellement" }
-                  ].map((item) => (
-                    <button
-                      key={item.key}
-                      onClick={() => setPref("voiceTranscriptMode", item.key as VoiceTranscriptMode)}
-                      className={`rounded-xl px-3 py-2 text-sm ${prefs.voiceTranscriptMode === item.key ? "bg-neoblue/25 text-neoblue" : "bg-white/10 text-slate-300"}`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </SettingCard>
-
-            <SettingCard title="Actions discussions">
-              <button onClick={() => void archiveEverything()} disabled={busy} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10 disabled:opacity-60">
-                Archiver toutes les discussions
-              </button>
-              <button onClick={() => openDangerModal("clear")} disabled={busy} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10 disabled:opacity-60">
-                Effacer toutes les discussions
-              </button>
-              <button onClick={() => openDangerModal("delete")} disabled={busy} className="w-full rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-left text-sm text-red-100 hover:bg-red-500/20 disabled:opacity-60">
-                Supprimer toutes les discussions
-              </button>
-              <button onClick={() => void exportDiscussions()} disabled={busy} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10 disabled:opacity-60">
-                Exporter les discussions
-              </button>
-            </SettingCard>
-          </div>
-        )}
-
-        {tab === "confidentialite" && (
-          <div className="grid gap-4 xl:grid-cols-2">
-            <SettingCard title="Confidentialité du compte">
-              <SettingSwitch label="Profil visible" checked={prefs.profileVisibility === "VISIBLE"} onChange={(value) => setPref("profileVisibility", value ? "VISIBLE" : "HIDDEN")} />
-              <SettingSwitch label="Messages de tous" checked={prefs.messagePolicy === "ALL"} onChange={(value) => setPref("messagePolicy", value ? "ALL" : "MATCH_ONLY")} />
-              <SettingSwitch label="Masquer le statut en ligne" checked={prefs.hideOnlineStatus} onChange={(value) => setPref("hideOnlineStatus", value)} />
-              <SettingSwitch label="Mode invisible" checked={prefs.invisibleMode} onChange={(value) => setPref("invisibleMode", value)} />
-            </SettingCard>
-
-            <SettingCard title="Sécurité">
-              <SettingSwitch label="Mode économie de données" checked={prefs.dataSaver} onChange={(value) => setPref("dataSaver", value)} />
-              <button onClick={() => setStatus("Centre de confidentialite pret. Connectez la route backend correspondante pour finaliser.")} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10">
-                Ouvrir le centre de confidentialité
-              </button>
-              <button onClick={() => setStatus("Comptes restreints: module pret, activez la route backend pour filtrage avance.")} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10">
-                Gérer les comptes restreints
-              </button>
-            </SettingCard>
-          </div>
-        )}
-
-        {tab === "media" && (
-          <div className="grid gap-4 xl:grid-cols-2">
-            <SettingCard title="Contenu multimédia">
-              <SettingSwitch label="Qualité HD" description="Désactivez pour réduire l’utilisation de données" checked={!prefs.dataSaver} onChange={(value) => setPref("dataSaver", !value)} />
-              <SettingSwitch label="Autoriser camera/galerie" description="Necessaire pour stories, reels et messages media" checked={true} onChange={() => setStatus("Les autorisations se reglent depuis le navigateur ou le telephone.")} />
-              <button onClick={() => setStatus("Archivage et telechargements actifs via export JSON et bouton medias dans les chats.")} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10">
-                Archivage et telechargements
-              </button>
-            </SettingCard>
-
-            <SettingCard title="Intégrations">
-              <button onClick={() => setStatus("Intégrations externes : module prêt. Activez les connecteurs si nécessaire.")} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10">
-                Connecteurs externes
-              </button>
-              <button onClick={() => setStatus("Partage : configuration prête. Ajoutez vos destinations de publication.")} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10">
-                Partage et publication
-              </button>
-            </SettingCard>
-          </div>
-        )}
-
-        {tab === "notifications" && (
-          <div className="grid gap-4 xl:grid-cols-2">
-            <SettingCard title="Notifications push">
-              <SettingSwitch label="Messages" checked={prefs.notifMessages} onChange={(value) => setPref("notifMessages", value)} />
-              <SettingSwitch label="Likes" checked={prefs.notifLikes} onChange={(value) => setPref("notifLikes", value)} />
-              <SettingSwitch label="Appels" checked={prefs.notifCalls} onChange={(value) => setPref("notifCalls", value)} />
-            </SettingCard>
-
-            <SettingCard title="Commandes rapides">
-              <button onClick={() => setStatus("Notification test envoyee (simulation front).")}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10">
-                Envoyer une notification test
-              </button>
-              <button onClick={() => setStatus("Paiements et commandes relies au module wallet/freemium deja en place.")}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10">
-                Commandes et paiements
-              </button>
-            </SettingCard>
-          </div>
-        )}
-
-        {tab === "securite" && (
-          <div className="grid gap-4 xl:grid-cols-2">
-            <SettingCard title="Protection du compte">
-              <SettingSwitch
-                label="Double authentification (2FA)"
-                description="Code secondaire demandé à la connexion."
-                checked={twoFaEnabled}
-                onChange={(value) => {
-                  setTwoFaEnabled(value);
-                  setStatus(value ? "2FA activée (étape backend OTP/app à finaliser)." : "2FA désactivée.");
-                }}
-              />
-              <SettingSwitch
-                label="Verrouillage session par code"
-                description="Demander un code local pour ouvrir les discussions."
-                checked={sessionLock}
-                onChange={(value) => {
-                  setSessionLock(value);
-                  setStatus(value ? "Verrouillage session activé." : "Verrouillage session désactivé.");
-                }}
-              />
-              <button
-                onClick={() => setStatus("Audit sécurité lancé: sessions, appareils, activité suspecte.")}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10"
-              >
-                Vérifier les sessions actives
-              </button>
-            </SettingCard>
-            <SettingCard title="Modération & anti-abus">
-              <button onClick={() => setStatus("Mode anti-spam IA renforcé activé.")} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10">
-                Renforcer anti-spam IA
-              </button>
-              <button onClick={() => setStatus("Filtre contenu sensible mis à jour.")} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10">
-                Filtre contenu sensible
-              </button>
-              <button onClick={() => setStatus("Paramètres de blocage/signalement prêts.")} className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-left text-sm text-white hover:bg-white/10">
-                Blocages et signalements
-              </button>
-            </SettingCard>
-          </div>
-        )}
-
-        {tab === "abonnement" && (
-          <div className="grid gap-4 xl:grid-cols-2">
-            <SettingCard title="Offres Solola">
-              <div className="grid gap-2">
-                <button
-                  onClick={() => {
-                    setPlanTier("FREE");
-                    setStatus("Plan Free activé.");
-                  }}
-                  className={`rounded-2xl border px-4 py-3 text-left text-sm ${planTier === "FREE" ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100" : "border-white/15 bg-white/5 text-slate-200"}`}
-                >
-                  Free — messagerie, posts, reels, stories, groupes/canaux basiques
-                </button>
-                <button
-                  onClick={() => {
-                    setPlanTier("PRO");
-                    setStatus("Plan Pro sélectionné. Passez au module paiement pour finaliser.");
-                  }}
-                  className={`rounded-2xl border px-4 py-3 text-left text-sm ${planTier === "PRO" ? "border-neoblue/50 bg-neoblue/15 text-neoblue" : "border-white/15 bg-white/5 text-slate-200"}`}
-                >
-                  Pro — analytics avancées, diffusion premium, outils business, priorités support
-                </button>
-              </div>
-            </SettingCard>
-            <SettingCard title="Avantages Pro (style Telegram Premium)">
-              <ul className="space-y-2 text-sm text-slate-200">
-                <li>• Limites plus élevées (groupes, canaux, fichiers)</li>
-                <li>• Personnalisation avancée (thèmes, badges, profil pro)</li>
-                <li>• Outils créateurs (stats, monétisation, diffusion)</li>
-                <li>• Accès prioritaire aux nouvelles fonctionnalités IA</li>
-              </ul>
-              <button
-                onClick={() => setStatus("Checkout abonnement prêt (connecter provider paiement).")}
-                className="mt-2 w-full rounded-xl border border-neoblue/40 bg-neoblue/10 px-4 py-2 text-left text-sm text-neoblue hover:bg-neoblue/20"
-              >
-                Passer à Solola Pro
-              </button>
-            </SettingCard>
-          </div>
-        )}
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          <button onClick={() => void saveAll()} disabled={busy} className="rounded-xl bg-[#38d37f] px-4 py-2 font-semibold text-[#041127] transition-colors hover:bg-[#4be191] disabled:opacity-60">
-            {busy ? "Traitement..." : "Enregistrer tout"}
-          </button>
-          <button onClick={resetAll} className="rounded-xl border border-white/20 px-4 py-2 text-slate-200">Réinitialiser</button>
-          <button onClick={() => { logoutSession(); router.replace("/"); }} className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2 text-red-200">
-            Se déconnecter
-          </button>
-          <button onClick={() => openDangerModal("account")} className="rounded-xl border border-red-500/40 bg-red-900/20 px-4 py-2 text-red-100">
-            Supprimer le compte
-          </button>
-        </div>
-        <p className="mt-3 text-sm text-gold">{status}</p>
-
-        {dangerAction ? (
-          <DangerConfirmModal
-            action={dangerAction}
-            value={dangerValue}
-            busy={busy}
-            onValueChange={setDangerValue}
-            onCancel={closeDangerModal}
-            onConfirm={() => void confirmDangerAction()}
-          />
-        ) : null}
-          </div>
-        </div>
+        <motion.div
+          key={feedback}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass rounded-2xl p-3 text-sm text-slate-200"
+        >
+          {feedback}
+        </motion.div>
       </section>
     </AuthGuard>
   );
