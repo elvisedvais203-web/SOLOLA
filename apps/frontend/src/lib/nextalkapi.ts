@@ -1,7 +1,7 @@
-import axios, { type AxiosResponse } from "axios";
+import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
 import { DEPLOY_FALLBACK_API_BASE } from "./nextalkdeployfallbacks";
 import type { AppUser } from "./nextalksession";
-import { resolveAxiosApiBaseUrl } from "./nextalkapiresolve";
+import { normalizeBackendApiUrl, resolveAxiosApiBaseUrl } from "./nextalkapiresolve";
 
 /** Réponses `/auth/email/*`, `/auth/firebase/verify` : tokens + utilisateur applicatif. */
 export type AuthApiSessionResponse = {
@@ -9,21 +9,65 @@ export type AuthApiSessionResponse = {
   user: AppUser;
 };
 
+/** Render cold start : 20 s suffisent rarement ; auth peut dépasser sans être bloqué côté client. */
+const DEFAULT_AXIOS_TIMEOUT_MS = 55000;
+
 const api = axios.create({
   baseURL: resolveAxiosApiBaseUrl(),
-  timeout: 20000,
+  timeout: DEFAULT_AXIOS_TIMEOUT_MS,
   withCredentials: false
 });
 
 let refreshPromise: Promise<string> | null = null;
 
-/** En prod navigateur : récupère l’origine backend côté serveur puis appelle l’API en direct (contourne un proxy /api défaillant). */
+/** En prod navigateur : première base candidate absolue pour éviter /api bloqué. */
 let clientBackendBootstrap: Promise<void> | null = null;
 
 function isBrowserProd(): boolean {
   if (typeof window === "undefined") return false;
   const h = window.location.hostname;
   return h !== "localhost" && h !== "127.0.0.1";
+}
+
+function pushUniqueApiBase(list: string[], raw: string | undefined): void {
+  if (!raw?.trim()) return;
+  const u = normalizeBackendApiUrl(raw.trim());
+  if (!list.includes(u)) list.push(u);
+}
+
+/**
+ * URLs /api à essayer en ordre : runtime Next, puis build, puis repli déploiement.
+ * Permet de contourner une seule URL mal configurée ou un service Render endormi.
+ */
+export async function getOrderedApiBases(): Promise<string[]> {
+  const bases: string[] = [];
+
+  if (typeof window !== "undefined" && isBrowserProd() && process.env.NEXT_PUBLIC_API_VIA_PROXY !== "1") {
+    try {
+      const r = await fetch("/api/__nextalk/backend", { cache: "no-store" });
+      if (r.ok) {
+        const j = (await r.json()) as { origin?: string };
+        const o = String(j.origin ?? "").trim().replace(/\/+$/, "");
+        if (o.startsWith("http://") || o.startsWith("https://")) {
+          pushUniqueApiBase(bases, `${o}/api`);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  pushUniqueApiBase(bases, process.env.NEXT_PUBLIC_API_URL);
+  const sock = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
+  if (sock) {
+    pushUniqueApiBase(bases, `${sock.replace(/\/+$/, "")}/api`);
+  }
+  pushUniqueApiBase(bases, DEPLOY_FALLBACK_API_BASE);
+
+  if (!bases.length) {
+    pushUniqueApiBase(bases, DEPLOY_FALLBACK_API_BASE);
+  }
+  return bases;
 }
 
 async function ensureClientDirectBackendBase(): Promise<void> {
@@ -35,21 +79,8 @@ async function ensureClientDirectBackendBase(): Promise<void> {
 
   if (!clientBackendBootstrap) {
     clientBackendBootstrap = (async () => {
-      try {
-        const r = await fetch("/api/__nextalk/backend", { cache: "no-store" });
-        if (r.ok) {
-          const j = (await r.json()) as { origin?: string };
-          const o = String(j.origin ?? "").trim().replace(/\/+$/, "");
-          if (o.startsWith("http://") || o.startsWith("https://")) {
-            api.defaults.baseURL = `${o}/api`;
-            return;
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-      /* Dernier recours : URL publique connue (évite de rester bloqué sur /api si le proxy Next échoue). */
-      api.defaults.baseURL = DEPLOY_FALLBACK_API_BASE;
+      const bases = await getOrderedApiBases();
+      api.defaults.baseURL = bases[0] ?? DEPLOY_FALLBACK_API_BASE;
     })();
   }
   await clientBackendBootstrap;
@@ -68,34 +99,37 @@ export function forceApiDeployFallbackBase(): void {
 }
 
 export function isAxiosNetworkError(error: unknown): boolean {
-  const e = error as { code?: string; message?: string };
+  const e = error as { code?: string; message?: string; response?: unknown };
+  if (e?.response != null) return false;
   const raw = String(e?.message ?? "");
   return (
     e?.code === "ERR_NETWORK" ||
     e?.code === "ECONNABORTED" ||
+    e?.code === "ENOTFOUND" ||
+    e?.code === "ECONNRESET" ||
     raw.toLowerCase().includes("network error") ||
     raw.toLowerCase().includes("timeout")
   );
 }
 
+function isTransientServerError(error: unknown): boolean {
+  const s = (error as { response?: { status?: number } })?.response?.status;
+  return s === 502 || s === 503 || s === 504 || s === 408;
+}
+
+function isRetriableApiFailure(error: unknown): boolean {
+  return isAxiosNetworkError(error) || isTransientServerError(error);
+}
+
 /**
- * POST avec une seconde tentative : si erreur réseau alors que la base était encore /api,
- * force le repli absolu puis réessaie une fois.
+ * POST auth : même pipeline axios ; l’intercepteur réponse essaie les autres bases si réseau / 502 / 503 / 504.
  */
 export async function apiPostAuthWithResilience<T extends AuthApiSessionResponse = AuthApiSessionResponse>(
   path: string,
   body: Record<string, unknown>
 ): Promise<AxiosResponse<T>> {
   await ensureClientDirectBackendBase();
-  try {
-    return await api.post<T>(path, body);
-  } catch (first: unknown) {
-    if (!isAxiosNetworkError(first)) throw first;
-    forceApiDeployFallbackBase();
-    const delay = 450;
-    await new Promise((r) => setTimeout(r, delay));
-    return await api.post<T>(path, body);
-  }
+  return api.post<T>(path, body, { timeout: DEFAULT_AXIOS_TIMEOUT_MS });
 }
 
 api.interceptors.request.use(async (config) => {
@@ -112,6 +146,20 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    const cfg = error?.config as (InternalAxiosRequestConfig & { _klBaseAttempt?: number }) | undefined;
+    if (typeof window !== "undefined" && cfg && isBrowserProd() && process.env.NEXT_PUBLIC_API_VIA_PROXY !== "1") {
+      const attempt = cfg._klBaseAttempt ?? 0;
+      if (isRetriableApiFailure(error)) {
+        const bases = await getOrderedApiBases();
+        if (attempt + 1 < bases.length) {
+          cfg._klBaseAttempt = attempt + 1;
+          cfg.baseURL = bases[attempt + 1];
+          await new Promise((r) => setTimeout(r, 400 + attempt * 250));
+          return api.request(cfg);
+        }
+      }
+    }
+
     if (typeof window !== "undefined") {
       const status = error?.response?.status;
       const message = String(error?.response?.data?.message ?? "").toLowerCase();
