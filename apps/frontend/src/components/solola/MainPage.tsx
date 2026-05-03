@@ -11,6 +11,7 @@ import {
   RecaptchaVerifier,
   type ApplicationVerifier,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPhoneNumber,
   signInWithPopup,
@@ -74,6 +75,7 @@ export function MainPage() {
   const [intent, setIntent] = useState<AuthIntent>("login");
   const [oauthBusy, setOauthBusy] = useState<null | "google" | "apple">(null);
   const [emailBusy, setEmailBusy] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
   const [showEmailPw, setShowEmailPw] = useState(false);
   const [showEmailPw2, setShowEmailPw2] = useState(false);
   const [emailValue, setEmailValue] = useState("");
@@ -119,8 +121,9 @@ export function MainPage() {
     oauthBusy !== null ||
     sending ||
     verifying ||
-    emailBusy;
-  const phoneBusy = oauthBusy !== null || emailBusy;
+    emailBusy ||
+    resetBusy;
+  const phoneBusy = oauthBusy !== null || emailBusy || resetBusy;
 
   function resolveDisplayNameForBackend(firebaseUser: User): string | undefined {
     const extra = profileDisplayName.trim();
@@ -319,6 +322,33 @@ export function MainPage() {
     }
   };
 
+  const sendPasswordReset = async () => {
+    if (!FIREBASE_CONFIGURED || !firebaseAuth) return;
+    const email = emailValue.trim().toLowerCase();
+    if (!email) {
+      setStatus("Indique d’abord ton adresse e-mail dans le champ ci-dessus.");
+      setStatusType("error");
+      return;
+    }
+    setResetBusy(true);
+    setStatus("");
+    try {
+      await sendPasswordResetEmail(firebaseAuth, email, {
+        url: `${window.location.origin}/auth`,
+        handleCodeInApp: false
+      });
+      setStatusType("success");
+      setStatus(
+        "Si cette adresse correspond à un compte, tu recevras un e-mail avec un lien pour définir un nouveau mot de passe. Pense à vérifier les courriers indésirables."
+      );
+    } catch (error: unknown) {
+      setStatus(firebaseAuthUserMessage(error));
+      setStatusType("error");
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
   return (
     <main className="relative min-h-[100svh] overflow-hidden">
       <AnimatedBackground />
@@ -494,6 +524,18 @@ export function MainPage() {
                   isVisible={showEmailPw}
                   onToggleVisibility={() => setShowEmailPw((x) => !x)}
                 />
+                {intent === "login" ? (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void sendPasswordReset()}
+                      disabled={!FIREBASE_CONFIGURED || resetBusy || oauthBusy !== null || sending || verifying}
+                      className="text-xs font-medium text-cyan-300/90 underline decoration-cyan-500/40 underline-offset-2 transition hover:text-cyan-200 disabled:opacity-40"
+                    >
+                      {resetBusy ? "Envoi du lien…" : "Mot de passe oublié ?"}
+                    </button>
+                  </div>
+                ) : null}
                 {intent === "register" ? (
                   <GlassInput
                     label="Confirmer le mot de passe"
@@ -509,7 +551,9 @@ export function MainPage() {
                 <button
                   type="button"
                   onClick={() => void submitEmailPassword()}
-                  disabled={!FIREBASE_CONFIGURED || emailBusy || oauthBusy !== null || sending || verifying}
+                  disabled={
+                    !FIREBASE_CONFIGURED || emailBusy || resetBusy || oauthBusy !== null || sending || verifying
+                  }
                   className="w-full rounded-2xl border border-violet-400/40 bg-violet-500/15 px-4 py-3 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/25 disabled:opacity-50"
                 >
                   {emailBusy

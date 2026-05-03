@@ -77,7 +77,11 @@ export function firebaseAuthUserMessage(error: unknown): string {
       "Mot de passe trop faible. Utilise au moins 6 caractères (recommandation Firebase).",
     "auth/wrong-password": "Mot de passe incorrect.",
     "auth/user-not-found": "Aucun compte avec cette adresse. Crée un compte ou vérifie l’e-mail.",
-    "auth/invalid-credential": "E-mail ou mot de passe incorrect."
+    "auth/invalid-credential": "E-mail ou mot de passe incorrect.",
+    "auth/invalid-continue-uri":
+      "L’URL de retour après réinitialisation n’est pas autorisée. Dans Firebase Console : Authentication > Settings > Authorized domains, ajoute ton domaine (ex. celui de Solola).",
+    "auth/unauthorized-continue-uri":
+      "Domaine non autorisé pour le lien de réinitialisation. Vérifie les domaines autorisés dans Firebase."
   };
 
   if (code && byCode[code]) {

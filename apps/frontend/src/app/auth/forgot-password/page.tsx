@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-/** L’auth applicative par e-mail est désactivée ; seule Firebase est proposée sur /auth. */
+/** Réinitialisation via Firebase : utiliser « Mot de passe oublié ? » sur /auth (Connexion). */
 export default function ForgotPasswordPage() {
   const router = useRouter();
 
