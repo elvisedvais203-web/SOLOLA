@@ -10,9 +10,12 @@ import {
   OAuthProvider,
   RecaptchaVerifier,
   type ApplicationVerifier,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   signInWithPhoneNumber,
   signInWithPopup,
-  signOut
+  signOut,
+  updateProfile
 } from "firebase/auth";
 import { getFirebaseAuth } from "../../nextalkfirebase";
 import { apiPostAuthWithResilience, prewarmClientApiBase } from "../../lib/nextalkapi";
@@ -28,6 +31,8 @@ import { AuthCard } from "./AuthCard";
 import { GlassInput } from "./GlassInput";
 
 type GatewayStep = "intro" | "gateway";
+
+type AuthIntent = "login" | "register";
 
 type PhoneConfirmation = { confirm: (code: string) => Promise<{ user: User }> };
 
@@ -54,6 +59,7 @@ export function MainPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = sanitizeNextPath(searchParams.get("next"));
+  const registerFromUrl = searchParams.get("register") === "1";
 
   const firebaseAuth = useMemo(() => {
     if (typeof window === "undefined" || !FIREBASE_CONFIGURED) return null;
@@ -65,7 +71,15 @@ export function MainPage() {
   }, []);
 
   const [step, setStep] = useState<GatewayStep>("intro");
+  const [intent, setIntent] = useState<AuthIntent>("login");
   const [oauthBusy, setOauthBusy] = useState<null | "google" | "apple">(null);
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [showEmailPw, setShowEmailPw] = useState(false);
+  const [showEmailPw2, setShowEmailPw2] = useState(false);
+  const [emailValue, setEmailValue] = useState("");
+  const [passwordValue, setPasswordValue] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [profileDisplayName, setProfileDisplayName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("+243");
   const [otpCode, setOtpCode] = useState("");
   const [confirmationResult, setConfirmationResult] = useState<PhoneConfirmation | null>(null);
@@ -90,19 +104,36 @@ export function MainPage() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (registerFromUrl) {
+      setIntent("register");
+      setStep("gateway");
+    }
+  }, [registerFromUrl]);
+
+  useEffect(() => {
     void prewarmClientApiBase();
   }, []);
 
   const oauthDisabled =
-    !FIREBASE_CONFIGURED || oauthBusy !== null || sending || verifying;
-  const phoneBusy = oauthBusy !== null;
+    !FIREBASE_CONFIGURED ||
+    oauthBusy !== null ||
+    sending ||
+    verifying ||
+    emailBusy;
+  const phoneBusy = oauthBusy !== null || emailBusy;
+
+  function resolveDisplayNameForBackend(firebaseUser: User): string | undefined {
+    const extra = profileDisplayName.trim();
+    if (intent === "register" && extra) return extra;
+    return firebaseUser.displayName ?? undefined;
+  }
 
   const finishFirebaseUserSession = async (firebaseUser: User): Promise<boolean> => {
     try {
       const idToken = await firebaseUser.getIdToken(true);
       const backend = await apiPostAuthWithResilience("/auth/firebase/verify", {
         idToken,
-        displayName: firebaseUser.displayName ?? undefined
+        displayName: resolveDisplayNameForBackend(firebaseUser)
       });
       storeSession({
         accessToken: backend.data.tokens.accessToken,
@@ -110,7 +141,7 @@ export function MainPage() {
         user: backend.data.user
       });
       setStatusType("success");
-      setStatus("Connexion réussie.");
+      setStatus(intent === "register" ? "Inscription réussie." : "Connexion réussie.");
       router.replace(nextPath);
       return true;
     } catch (error: unknown) {
@@ -225,19 +256,7 @@ export function MainPage() {
       setVerifying(true);
       setStatus("");
       const credential = await confirmationResult.confirm(otpCode.trim());
-      const idToken = await credential.user.getIdToken(true);
-      const backend = await apiPostAuthWithResilience("/auth/firebase/verify", {
-        idToken,
-        displayName: credential.user.displayName ?? undefined
-      });
-      storeSession({
-        accessToken: backend.data.tokens.accessToken,
-        refreshToken: backend.data.tokens.refreshToken,
-        user: backend.data.user
-      });
-      setStatusType("success");
-      setStatus("Connexion réussie.");
-      router.replace(nextPath);
+      await finishFirebaseUserSession(credential.user);
     } catch (error: unknown) {
       const e = error as {
         code?: string;
@@ -254,6 +273,49 @@ export function MainPage() {
       setStatusType("error");
     } finally {
       setVerifying(false);
+    }
+  };
+
+  const submitEmailPassword = async () => {
+    if (!FIREBASE_CONFIGURED || !firebaseAuth) return;
+    const email = emailValue.trim().toLowerCase();
+    if (!email || !passwordValue) {
+      setStatus("Renseigne l’e-mail et le mot de passe.");
+      setStatusType("error");
+      return;
+    }
+    if (intent === "register") {
+      if (passwordValue.length < 6) {
+        setStatus("Le mot de passe doit contenir au moins 6 caractères.");
+        setStatusType("error");
+        return;
+      }
+      if (passwordValue !== passwordConfirm) {
+        setStatus("Les deux mots de passe ne correspondent pas.");
+        setStatusType("error");
+        return;
+      }
+    }
+    setEmailBusy(true);
+    setStatus("");
+    try {
+      if (intent === "register") {
+        const cred = await createUserWithEmailAndPassword(firebaseAuth, email, passwordValue);
+        const name = profileDisplayName.trim();
+        if (name) {
+          await updateProfile(cred.user, { displayName: name });
+          await cred.user.reload();
+        }
+        await finishFirebaseUserSession(cred.user);
+      } else {
+        const cred = await signInWithEmailAndPassword(firebaseAuth, email, passwordValue);
+        await finishFirebaseUserSession(cred.user);
+      }
+    } catch (error: unknown) {
+      setStatus(firebaseAuthUserMessage(error));
+      setStatusType("error");
+    } finally {
+      setEmailBusy(false);
     }
   };
 
@@ -293,17 +355,26 @@ export function MainPage() {
               >
                 Connecter. Ressentir. Exister.
               </motion.p>
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  setStep("gateway");
-                  setStatus("");
-                }}
-                className="btn-neon mt-8 rounded-2xl px-6 py-3 text-sm font-semibold text-white"
-              >
-                Entrer dans Solola
-              </motion.button>
+              <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => {
+                    setStep("gateway");
+                    setIntent("login");
+                    setStatus("");
+                  }}
+                  className="btn-neon rounded-2xl px-6 py-3 text-sm font-semibold text-white"
+                >
+                  Entrer dans Solola
+                </motion.button>
+                <Link
+                  href="/auth?register=1"
+                  className="text-sm font-medium text-cyan-300/90 underline decoration-cyan-500/50 underline-offset-4 transition hover:text-cyan-200"
+                >
+                  Créer un compte
+                </Link>
+              </div>
             </motion.section>
           ) : null}
 
@@ -317,13 +388,58 @@ export function MainPage() {
             >
               <AuthCard
                 title="Solola Gateway"
-                subtitle="Connexion uniquement via Firebase : Google, Apple ou SMS."
+                subtitle={
+                  intent === "register"
+                    ? "Inscription Firebase : e-mail, Google, Apple ou SMS — ton compte Solola est créé au premier succès."
+                    : "Connexion Firebase : e-mail, Google, Apple ou SMS."
+                }
               >
                 {!FIREBASE_CONFIGURED ? (
                   <p className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
                     Définis NEXT_PUBLIC_FIREBASE_API_KEY, NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
                     NEXT_PUBLIC_FIREBASE_PROJECT_ID et NEXT_PUBLIC_FIREBASE_APP_ID, puis redémarre le serveur.
                   </p>
+                ) : null}
+
+                <div className="flex rounded-2xl border border-white/15 bg-black/25 p-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIntent("login");
+                      setStatus("");
+                    }}
+                    className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                      intent === "login"
+                        ? "bg-white/15 text-white shadow-inner"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Connexion
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIntent("register");
+                      setStatus("");
+                    }}
+                    className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                      intent === "register"
+                        ? "bg-white/15 text-white shadow-inner"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Inscription
+                  </button>
+                </div>
+
+                {intent === "register" ? (
+                  <GlassInput
+                    label="Prénom ou pseudo (optionnel)"
+                    type="text"
+                    value={profileDisplayName}
+                    onChange={(v) => setProfileDisplayName(v)}
+                    placeholder="Ex. Alex"
+                  />
                 ) : null}
 
                 <div className="flex flex-col gap-2">
@@ -333,7 +449,11 @@ export function MainPage() {
                     onClick={() => void signInWithGooglePopup()}
                     className="w-full rounded-2xl border border-white/20 bg-white/[0.08] px-4 py-3 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/[0.12] disabled:opacity-50"
                   >
-                    {oauthBusy === "google" ? "Connexion…" : "Continuer avec Google"}
+                    {oauthBusy === "google"
+                      ? "Patience…"
+                      : intent === "register"
+                        ? "S’inscrire avec Google"
+                        : "Continuer avec Google"}
                   </button>
                   <button
                     type="button"
@@ -341,9 +461,63 @@ export function MainPage() {
                     onClick={() => void signInWithApplePopup()}
                     className="w-full rounded-2xl border border-white/25 bg-[#0a0a0f] px-4 py-3 text-sm font-semibold text-white transition hover:bg-black/60 disabled:opacity-50"
                   >
-                    {oauthBusy === "apple" ? "Connexion…" : "Continuer avec Apple"}
+                    {oauthBusy === "apple"
+                      ? "Patience…"
+                      : intent === "register"
+                        ? "S’inscrire avec Apple"
+                        : "Continuer avec Apple"}
                   </button>
                 </div>
+
+                <div className="my-2 flex items-center gap-3">
+                  <span className="h-px flex-1 bg-white/15" />
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    ou e-mail
+                  </span>
+                  <span className="h-px flex-1 bg-white/15" />
+                </div>
+
+                <GlassInput
+                  label="E-mail"
+                  type="email"
+                  value={emailValue}
+                  onChange={(v) => setEmailValue(v)}
+                  placeholder="toi@exemple.com"
+                />
+                <GlassInput
+                  label="Mot de passe"
+                  type="password"
+                  value={passwordValue}
+                  onChange={(v) => setPasswordValue(v)}
+                  placeholder="••••••••"
+                  showToggle
+                  isVisible={showEmailPw}
+                  onToggleVisibility={() => setShowEmailPw((x) => !x)}
+                />
+                {intent === "register" ? (
+                  <GlassInput
+                    label="Confirmer le mot de passe"
+                    type="password"
+                    value={passwordConfirm}
+                    onChange={(v) => setPasswordConfirm(v)}
+                    placeholder="••••••••"
+                    showToggle
+                    isVisible={showEmailPw2}
+                    onToggleVisibility={() => setShowEmailPw2((x) => !x)}
+                  />
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void submitEmailPassword()}
+                  disabled={!FIREBASE_CONFIGURED || emailBusy || oauthBusy !== null || sending || verifying}
+                  className="w-full rounded-2xl border border-violet-400/40 bg-violet-500/15 px-4 py-3 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/25 disabled:opacity-50"
+                >
+                  {emailBusy
+                    ? "Patience…"
+                    : intent === "register"
+                      ? "Créer mon compte avec l’e-mail"
+                      : "Se connecter avec l’e-mail"}
+                </button>
 
                 <div className="my-2 flex items-center gap-3">
                   <span className="h-px flex-1 bg-white/15" />
@@ -384,7 +558,11 @@ export function MainPage() {
                       disabled={sending || verifying || phoneBusy}
                       className="w-full rounded-2xl border border-cyan-400/50 bg-white/5 px-4 py-3 text-sm font-semibold text-cyan-200 transition hover:bg-white/10 disabled:opacity-50"
                     >
-                      {verifying ? "Vérification…" : "Vérifier et se connecter"}
+                      {verifying
+                        ? "Vérification…"
+                        : intent === "register"
+                          ? "Vérifier et terminer l’inscription"
+                          : "Vérifier et se connecter"}
                     </button>
                   </>
                 ) : null}

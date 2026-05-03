@@ -1,4 +1,4 @@
-/** Utilitaires partagés pour l’écran d’auth Firebase (Google, Apple, téléphone). */
+/** Utilitaires partagés pour l’écran d’auth Firebase (e-mail, Google, Apple, téléphone). */
 
 export function formatPhoneInput(value: string) {
   if (!value.startsWith("+")) {
@@ -69,7 +69,15 @@ export function firebaseAuthUserMessage(error: unknown): string {
     "auth/web-storage-unsupported":
       "Stockage navigateur indisponible (mode privé ?). Utilise une fenêtre normale.",
     "auth/operation-not-supported-in-this-environment":
-      "Connexion non prise en charge dans cet environnement (navigateur ou intégration)."
+      "Connexion non prise en charge dans cet environnement (navigateur ou intégration).",
+    "auth/email-already-in-use":
+      "Cette adresse e-mail est déjà utilisée. Passe en « Connexion » ou connecte-toi avec Google / Apple si tu l’as déjà faite.",
+    "auth/invalid-email": "Adresse e-mail invalide.",
+    "auth/weak-password":
+      "Mot de passe trop faible. Utilise au moins 6 caractères (recommandation Firebase).",
+    "auth/wrong-password": "Mot de passe incorrect.",
+    "auth/user-not-found": "Aucun compte avec cette adresse. Crée un compte ou vérifie l’e-mail.",
+    "auth/invalid-credential": "E-mail ou mot de passe incorrect."
   };
 
   if (code && byCode[code]) {

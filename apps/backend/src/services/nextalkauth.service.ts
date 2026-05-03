@@ -157,7 +157,11 @@ export async function loginOrRegisterWithFirebaseIdentity(input: {
   }
 
   const identifier = phone ?? email ?? firebaseUid;
-  const reason = phone ? "FIREBASE_PHONE_LOGIN" : "FIREBASE_OAUTH_LOGIN";
+  const reason = phone
+    ? "FIREBASE_PHONE_LOGIN"
+    : email
+      ? "FIREBASE_EMAIL_LOGIN"
+      : "FIREBASE_OAUTH_LOGIN";
 
   await prisma.loginEvent.create({
     data: {
