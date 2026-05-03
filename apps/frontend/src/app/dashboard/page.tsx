@@ -1,8 +1,10 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { AuthGuard } from "../../components/nextalkauthguard";
+import { getStoredUser } from "../../lib/nextalksession";
+import { getWelcomeFirstName } from "../../lib/nextalkwelcome";
 
 const initialPosts = Array.from({ length: 8 }, (_, i) => ({
   id: `post-${i}`,
@@ -17,6 +19,11 @@ export default function DashboardPage() {
   const [posts, setPosts] = useState(initialPosts);
   const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState("");
+  const [welcomeName, setWelcomeName] = useState("toi");
+
+  useEffect(() => {
+    setWelcomeName(getWelcomeFirstName(getStoredUser()));
+  }, []);
 
   const filteredPosts = useMemo(
     () => posts.filter((post) => post.user.toLowerCase().includes(query.toLowerCase()) || post.text.toLowerCase().includes(query.toLowerCase())),
@@ -47,7 +54,9 @@ export default function DashboardPage() {
         <div className="space-y-4">
           <header className="glass rounded-3xl p-4">
             <div className="flex items-center justify-between gap-3">
-              <h1 className="font-heading text-2xl font-bold text-white">Bienvenue Elvis 👋</h1>
+              <h1 className="font-heading text-2xl font-bold text-white">
+                Bienvenue {welcomeName} 👋
+              </h1>
               <div className="relative">
                 <button className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white">Notifications</button>
                 <motion.span

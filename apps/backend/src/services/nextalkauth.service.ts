@@ -22,6 +22,35 @@ function issueTokens(userId: string, planTier: "FREE" | "PREMIUM", role: "USER" 
   return { accessToken, refreshToken };
 }
 
+/** Utilisateur renvoyé au client (jamais de mot de passe ni champs sensibles). */
+export type PublicAuthUser = {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  planTier: "FREE" | "PREMIUM";
+  role: "USER" | "ADMIN" | "SUPERADMIN";
+  displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+};
+
+export async function loadPublicAuthUser(userId: string): Promise<PublicAuthUser> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    include: { profile: true }
+  });
+  return {
+    id: user.id,
+    email: user.email,
+    phone: user.phone,
+    planTier: user.planTier,
+    role: user.role,
+    displayName: user.profile?.displayName ?? null,
+    firstName: user.profile?.firstName ?? null,
+    lastName: user.profile?.lastName ?? null
+  };
+}
+
 export async function refreshTokens(refreshToken: string) {
   try {
     const payload = jwt.verify(refreshToken, env.jwtRefreshSecret) as { userId: string };
@@ -31,7 +60,7 @@ export async function refreshTokens(refreshToken: string) {
     }
 
     return {
-      user,
+      user: await loadPublicAuthUser(user.id),
       tokens: issueTokens(user.id, user.planTier, user.role)
     };
   } catch {
@@ -54,7 +83,8 @@ function requirePasswordPolicy(password: string) {
 export async function registerWithEmailPassword(input: {
   email: string;
   password: string;
-  displayName?: string;
+  firstName: string;
+  lastName: string;
   ipAddress?: string;
   userAgent?: string;
 }) {
@@ -63,6 +93,13 @@ export async function registerWithEmailPassword(input: {
   if (!email.includes("@")) {
     throw new ApiError(400, "Email invalide.");
   }
+
+  const firstName = String(input.firstName ?? "").trim();
+  const lastName = String(input.lastName ?? "").trim();
+  if (!firstName || !lastName) {
+    throw new ApiError(400, "Le prénom et le nom sont obligatoires.");
+  }
+  const displayName = `${firstName} ${lastName}`;
 
   const existing = await prisma.user.findFirst({ where: { email } });
   if (existing) {
@@ -77,7 +114,9 @@ export async function registerWithEmailPassword(input: {
       otpVerified: false,
       profile: {
         create: {
-          displayName: String(input.displayName ?? email.split("@")[0] ?? "Utilisateur"),
+          displayName,
+          firstName,
+          lastName,
           interests: []
         }
       },
@@ -96,7 +135,7 @@ export async function registerWithEmailPassword(input: {
     }
   });
 
-  return { user, tokens: issueTokens(user.id, user.planTier, user.role) };
+  return { user: await loadPublicAuthUser(user.id), tokens: issueTokens(user.id, user.planTier, user.role) };
 }
 
 export async function loginWithEmailPassword(input: { email: string; password: string; ipAddress?: string; userAgent?: string }) {
@@ -146,7 +185,7 @@ export async function loginWithEmailPassword(input: { email: string; password: s
     }
   });
 
-  return { user, tokens: issueTokens(user.id, user.planTier, user.role) };
+  return { user: await loadPublicAuthUser(user.id), tokens: issueTokens(user.id, user.planTier, user.role) };
 }
 
 function hashToken(token: string) {
@@ -194,7 +233,7 @@ export async function resetPassword(input: { token: string; newPassword: string 
   });
   await prisma.passwordResetToken.update({ where: { tokenHash }, data: { usedAt: new Date() } });
 
-  return { user, tokens: issueTokens(user.id, user.planTier, user.role) };
+  return { user: await loadPublicAuthUser(user.id), tokens: issueTokens(user.id, user.planTier, user.role) };
 }
 
 export async function loginOrRegisterWithFirebaseIdentity(input: {
@@ -226,6 +265,9 @@ export async function loginOrRegisterWithFirebaseIdentity(input: {
     const defaultName =
       String(input.displayName ?? "").trim() ||
       (email ? email.split("@")[0]! : `User-${firebaseUid.slice(0, 8)}`);
+    const nameParts = defaultName.split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] ?? defaultName;
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : firstName;
     user = await prisma.user.create({
       data: {
         firebaseUid,
@@ -236,6 +278,8 @@ export async function loginOrRegisterWithFirebaseIdentity(input: {
         profile: {
           create: {
             displayName: defaultName,
+            firstName,
+            lastName,
             interests: []
           }
         },
@@ -291,7 +335,7 @@ export async function loginOrRegisterWithFirebaseIdentity(input: {
   });
 
   return {
-    user,
+    user: await loadPublicAuthUser(user.id),
     tokens: issueTokens(user.id, user.planTier, user.role)
   };
 }

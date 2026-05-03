@@ -146,7 +146,8 @@ export default function AuthClientSimple() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [status, setStatus] = useState("");
   const [statusType, setStatusType] = useState<"error" | "success">("success");
   const [sending, setSending] = useState(false);
@@ -430,6 +431,16 @@ export default function AuthClientSimple() {
       }
 
       if (authMode === "register") {
+        if (!firstName.trim() || !lastName.trim()) {
+          setStatus("Le prénom et le nom sont obligatoires.");
+          setStatusType("error");
+          return;
+        }
+        if (firstName.trim().length < 2 || lastName.trim().length < 2) {
+          setStatus("Prénom et nom : au moins 2 caractères chacun.");
+          setStatusType("error");
+          return;
+        }
         if (password.length < 8) {
           setStatus("Mot de passe trop court (minimum 8 caractères).");
           setStatusType("error");
@@ -443,7 +454,8 @@ export default function AuthClientSimple() {
         const resp = await apiPostAuthWithResilience("/auth/email/register", {
           email: email.trim(),
           password,
-          displayName: displayName.trim() || undefined
+          firstName: firstName.trim(),
+          lastName: lastName.trim()
         });
         storeSession({
           accessToken: resp.data.tokens.accessToken,
@@ -489,10 +501,13 @@ export default function AuthClientSimple() {
   const emailTrimmed = email.trim();
   const passwordOk = password.length >= 8;
   const confirmOk = authMode !== "register" || password === confirmPassword;
+  const namesOk =
+    authMode !== "register" ||
+    (firstName.trim().length >= 2 && lastName.trim().length >= 2);
   const canSubmitEmail =
     authMode === "login"
       ? Boolean(emailTrimmed) && Boolean(password)
-      : Boolean(emailTrimmed) && passwordOk && confirmOk;
+      : Boolean(emailTrimmed) && passwordOk && confirmOk && namesOk;
 
   return (
     <div className="mx-auto flex min-h-[100svh] max-w-6xl items-stretch justify-center px-4 py-8 pb-14 md:py-12">
@@ -740,13 +755,24 @@ export default function AuthClientSimple() {
               </button>
 
               {authMode === "register" ? (
-                <input
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)] disabled:opacity-60"
-                  placeholder="Nom (optionnel)"
-                  disabled={emailFormDisabled}
-                />
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <input
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)] disabled:opacity-60"
+                    placeholder="Prénom (obligatoire)"
+                    autoComplete="given-name"
+                    disabled={emailFormDisabled}
+                  />
+                  <input
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#10172b] placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[rgba(76,111,255,0.25)] disabled:opacity-60"
+                    placeholder="Nom (obligatoire)"
+                    autoComplete="family-name"
+                    disabled={emailFormDisabled}
+                  />
+                </div>
               ) : null}
 
               <input

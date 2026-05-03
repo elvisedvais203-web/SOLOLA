@@ -169,10 +169,13 @@ async function main() {
   if (env.superAdminEmail && env.superAdminPhone && env.superAdminPassword) {
     const superAdminPhone = normalizeRdcPhone(env.superAdminPhone);
     const superAdminHash = await bcrypt.hash(env.superAdminPassword, 12);
-    const superAdminName = process.env.SUPERADMIN_NAME ?? "Super Admin";
+    const superAdminName = (process.env.SUPERADMIN_NAME ?? "Super Admin").trim() || "Super Admin";
+    const nameParts = superAdminName.split(/\s+/).filter(Boolean);
+    const superFirst = nameParts[0] ?? "Super";
+    const superLast = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "-";
     const superAdminCreatedAt = process.env.SUPERADMIN_CREATED_AT ? new Date(process.env.SUPERADMIN_CREATED_AT) : undefined;
 
-    await prisma.user.upsert({
+    const superUser = await prisma.user.upsert({
       where: { phone: superAdminPhone },
       update: {
         email: env.superAdminEmail,
@@ -192,12 +195,37 @@ async function main() {
         profile: {
           create: {
             displayName: superAdminName,
+            firstName: superFirst,
+            lastName: superLast,
             bio: "Compte fondateur",
             city: "Kinshasa",
             interests: ["admin", "security", "growth"],
             verifiedBadge: true
           }
         }
+      }
+    });
+
+    await prisma.profile.upsert({
+      where: { userId: superUser.id },
+      update: {
+        displayName: superAdminName,
+        firstName: superFirst,
+        lastName: superLast,
+        bio: "Compte fondateur",
+        city: "Kinshasa",
+        interests: ["admin", "security", "growth"],
+        verifiedBadge: true
+      },
+      create: {
+        userId: superUser.id,
+        displayName: superAdminName,
+        firstName: superFirst,
+        lastName: superLast,
+        bio: "Compte fondateur",
+        city: "Kinshasa",
+        interests: ["admin", "security", "growth"],
+        verifiedBadge: true
       }
     });
   }

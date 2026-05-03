@@ -3,8 +3,9 @@ echo Creating superadmin account via API...
 
 REM Replace these with your actual values
 set SUPERADMIN_EMAIL=elvisedvais203@gmail.com
-set SUPERADMIN_PHONE=+243895966288
-set SUPERADMIN_PASSWORD=Edvais@CongoLove2026!
+set SUPERADMIN_PASSWORD=Admin123!
+set SUPERADMIN_FIRST=Edvais
+set SUPERADMIN_LAST=Makina
 
 REM API endpoint
 set API_URL=https://solola-api.onrender.com/api
@@ -23,7 +24,7 @@ echo API is accessible. Creating superadmin account...
 REM Create the superadmin account
 curl -X POST "%API_URL%/auth/email/register" ^
   -H "Content-Type: application/json" ^
-  -d "{\"email\":\"%SUPERADMIN_EMAIL%\",\"password\":\"%SUPERADMIN_PASSWORD%\",\"displayName\":\"Edvais Makina\",\"phone\":\"%SUPERADMIN_PHONE%\"}" ^
+  -d "{\"email\":\"%SUPERADMIN_EMAIL%\",\"password\":\"%SUPERADMIN_PASSWORD%\",\"firstName\":\"%SUPERADMIN_FIRST%\",\"lastName\":\"%SUPERADMIN_LAST%\"}" ^
   > response.json 2>nul
 
 REM Check if the request was successful

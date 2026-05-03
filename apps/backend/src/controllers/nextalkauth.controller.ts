@@ -32,11 +32,17 @@ export async function refresh(req: Request, res: Response) {
 }
 
 export async function registerEmail(req: Request, res: Response) {
-  const { email, password, displayName } = req.body as { email?: string; password?: string; displayName?: string };
+  const { email, password, firstName, lastName } = req.body as {
+    email?: string;
+    password?: string;
+    firstName?: string;
+    lastName?: string;
+  };
   const data = await registerWithEmailPassword({
     email: String(email ?? ""),
     password: String(password ?? ""),
-    displayName,
+    firstName: String(firstName ?? ""),
+    lastName: String(lastName ?? ""),
     ipAddress: req.ip,
     userAgent: req.get("user-agent") ?? undefined
   });

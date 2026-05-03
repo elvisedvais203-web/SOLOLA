@@ -38,7 +38,7 @@ export function GlassInput({
           hasError ? "border-rose-400/70" : "border-white/15 focus-within:border-cyan-300/70"
         }`}
       >
-        <span className="text-slate-300">{type === "email" ? "@" : "•"}</span>
+        <span className="text-slate-300">{type === "email" ? "@" : type === "password" ? "•" : "◇"}</span>
         <input
           type={computedType}
           value={value}

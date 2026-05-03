@@ -1,8 +1,8 @@
 param(
     [string]$Email = "elvisedvais203@gmail.com",
-    [string]$Phone = "+243895966288",
-    [string]$Password = "Edvais@CongoLove2026!",
-    [string]$DisplayName = "Edvais Makina",
+    [string]$Password = "Admin123!",
+    [string]$FirstName = "Edvais",
+    [string]$LastName = "Makina",
     [string]$ApiUrl = "https://solola-api.onrender.com/api"
 )
 
@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 Write-Host "Creating superadmin account via API..." -ForegroundColor Cyan
 Write-Host "API URL: $ApiUrl" -ForegroundColor Gray
 Write-Host "Email: $Email" -ForegroundColor Gray
-Write-Host "Phone: $Phone" -ForegroundColor Gray
+Write-Host "Nom: $FirstName $LastName" -ForegroundColor Gray
 
 # Test API connectivity
 Write-Host "Testing API connectivity..." -ForegroundColor Yellow
@@ -30,8 +30,8 @@ Write-Host "Creating superadmin account..." -ForegroundColor Yellow
 $body = @{
     email = $Email
     password = $Password
-    displayName = $DisplayName
-    phone = $Phone
+    firstName = $FirstName
+    lastName = $LastName
 } | ConvertTo-Json
 
 try {

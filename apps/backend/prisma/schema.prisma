@@ -234,6 +234,8 @@ model Profile {
   id            String   @id @default(uuid())
   userId        String   @unique
   displayName   String
+  firstName     String?
+  lastName      String?
   bio           String?
   city          String?
   latitude      Float?
