@@ -3,7 +3,7 @@ import { DEPLOY_FALLBACK_API_BASE } from "./nextalkdeployfallbacks";
 import type { AppUser } from "./nextalksession";
 import { normalizeBackendApiUrl, resolveAxiosApiBaseUrl } from "./nextalkapiresolve";
 
-/** Réponses `/auth/email/*`, `/auth/firebase/verify` : tokens + utilisateur applicatif. */
+/** Réponses `/auth/firebase/verify` (et `/auth/refresh`) : tokens + utilisateur applicatif. */
 export type AuthApiSessionResponse = {
   tokens: { accessToken: string; refreshToken: string };
   user: AppUser;

@@ -4,8 +4,6 @@ import PhotosUI
 struct ContentView: View {
   @EnvironmentObject var store: ProfileStore
 
-  @State private var email: String = ""
-  @State private var password: String = ""
   @State private var phone: String = ""
   @State private var otp: String = ""
   @State private var verificationId: String?
@@ -20,22 +18,10 @@ struct ContentView: View {
     NavigationView {
       Form {
         if store.uid == nil {
-          Section("Connexion") {
+          Section("Connexion Firebase (SMS)") {
             if store.isLoading { ProgressView() }
             if let err = store.error { Text(err).foregroundColor(.red) }
 
-            TextField("Email", text: $email)
-              .textInputAutocapitalization(.never)
-              .keyboardType(.emailAddress)
-            SecureField("Mot de passe", text: $password)
-
-            HStack {
-              Button("Se connecter") { Task { await store.signInEmail(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password) } }
-              Button("Créer compte") { Task { await store.signUpEmail(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password) } }
-            }
-          }
-
-          Section("Téléphone (OTP)") {
             TextField("+243...", text: $phone)
               .keyboardType(.phonePad)
             Button("Envoyer code") {

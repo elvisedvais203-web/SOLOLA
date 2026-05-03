@@ -49,8 +49,6 @@ class MainActivity : ComponentActivity() {
           val state by vm.state.collectAsState()
 
           val auth = remember { FirebaseAuth.getInstance() }
-          var email by remember { mutableStateOf("") }
-          var password by remember { mutableStateOf("") }
           var phone by remember { mutableStateOf("") }
           var otp by remember { mutableStateOf("") }
           var verificationId by remember { mutableStateOf<String?>(null) }
@@ -83,24 +81,8 @@ class MainActivity : ComponentActivity() {
               modifier = Modifier.fillMaxSize().padding(16.dp),
               verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-              Text(text = "Connexion", style = MaterialTheme.typography.headlineSmall)
+              Text(text = "Connexion Firebase (SMS)", style = MaterialTheme.typography.headlineSmall)
               state.error?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
-
-              Text(text = "Email / Mot de passe", style = MaterialTheme.typography.titleMedium)
-              OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
-              OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Mot de passe") }, modifier = Modifier.fillMaxWidth())
-              Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = {
-                  auth.signInWithEmailAndPassword(email.trim(), password)
-                    .addOnSuccessListener { vm.onAuthChanged() }
-                    .addOnFailureListener { e -> vm.onAuthChanged(); }
-                }) { Text("Se connecter") }
-                Button(onClick = {
-                  auth.createUserWithEmailAndPassword(email.trim(), password)
-                    .addOnSuccessListener { vm.onAuthChanged() }
-                    .addOnFailureListener { e -> vm.onAuthChanged(); }
-                }) { Text("Créer compte") }
-              }
 
               Text(text = "Téléphone (OTP)", style = MaterialTheme.typography.titleMedium)
               OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("+243...") }, modifier = Modifier.fillMaxWidth())

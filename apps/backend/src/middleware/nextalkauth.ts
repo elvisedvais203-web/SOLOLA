@@ -3,7 +3,6 @@ import jwt from "jsonwebtoken";
 import { env } from "../config/nextalkenv";
 import { getAccountRestriction } from "../services/nextalkaccount-restriction.service";
 import { getSessionInvalidatedAt } from "../services/nextalksession-security.service";
-import { prisma } from "../config/nextalkdb";
 
 export interface AuthRequest extends Request {
   user?: { userId: string; planTier: "FREE" | "PREMIUM"; role: "USER" | "ADMIN" | "SUPERADMIN" };
@@ -14,18 +13,7 @@ export async function authGuard(req: AuthRequest, res: Response, next: NextFunct
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
   if (!token) {
-    // Bypass temporaire auth: injecte un utilisateur de demo pour avancer sans connexion.
-    const demoUser = await prisma.user.findFirst({
-      select: { id: true, planTier: true, role: true },
-      orderBy: { createdAt: "asc" }
-    });
-    if (demoUser) {
-      req.user = { userId: demoUser.id, planTier: demoUser.planTier, role: demoUser.role };
-      next();
-      return;
-    }
-
-    res.status(401).json({ message: "Aucun utilisateur demo disponible. Lancez le seed d'abord." });
+    res.status(401).json({ message: "Authentification requise (Bearer JWT obtenu via Firebase)." });
     return;
   }
 

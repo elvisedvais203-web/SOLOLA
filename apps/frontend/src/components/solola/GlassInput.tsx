@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 
 type GlassInputProps = {
   label: string;
-  type?: "text" | "email" | "password";
+  type?: "text" | "email" | "password" | "tel";
   value: string;
   placeholder: string;
   onChange: (value: string) => void;
@@ -38,7 +38,9 @@ export function GlassInput({
           hasError ? "border-rose-400/70" : "border-white/15 focus-within:border-cyan-300/70"
         }`}
       >
-        <span className="text-slate-300">{type === "email" ? "@" : type === "password" ? "•" : "◇"}</span>
+        <span className="text-slate-300">
+          {type === "email" ? "@" : type === "password" ? "•" : type === "tel" ? "☎" : "◇"}
+        </span>
         <input
           type={computedType}
           value={value}

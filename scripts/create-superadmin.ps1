@@ -1,68 +1,8 @@
-param(
-    [string]$Email = "elvisedvais203@gmail.com",
-    [string]$Password = "Admin123!",
-    [string]$FirstName = "Edvais",
-    [string]$LastName = "Makina",
-    [string]$ApiUrl = "https://solola-api.onrender.com/api"
-)
+# Le compte super-admin est créé au démarrage de l’API si SUPERADMIN_* est défini (voir nextalkbootstrap.service).
+# La connexion se fait uniquement via Firebase : utilise le même e-mail que SUPERADMIN_EMAIL avec Google,
+# ou le numéro SUPERADMIN_PHONE avec l’auth SMS, pour lier firebaseUid au compte existant.
 
-$ErrorActionPreference = "Stop"
-
-Write-Host "Creating superadmin account via API..." -ForegroundColor Cyan
-Write-Host "API URL: $ApiUrl" -ForegroundColor Gray
-Write-Host "Email: $Email" -ForegroundColor Gray
-Write-Host "Nom: $FirstName $LastName" -ForegroundColor Gray
-
-# Test API connectivity
-Write-Host "Testing API connectivity..." -ForegroundColor Yellow
-try {
-    $response = Invoke-WebRequest -Uri "$ApiUrl" -Method GET -UseBasicParsing -TimeoutSec 10
-    Write-Host "✓ API is accessible" -ForegroundColor Green
-} catch {
-    Write-Host "✗ ERROR: API is not accessible at $ApiUrl" -ForegroundColor Red
-    Write-Host "Make sure the solola-api service is deployed and running in Render" -ForegroundColor Red
-    exit 1
-}
-
-# Create the superadmin account
-Write-Host "Creating superadmin account..." -ForegroundColor Yellow
-
-$body = @{
-    email = $Email
-    password = $Password
-    firstName = $FirstName
-    lastName = $LastName
-} | ConvertTo-Json
-
-try {
-    $response = Invoke-WebRequest -Uri "$ApiUrl/auth/email/register" -Method POST -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 30
-
-    if ($response.StatusCode -eq 200 -or $response.StatusCode -eq 201) {
-        Write-Host "✓ Superadmin account created successfully!" -ForegroundColor Green
-        Write-Host "Response:" -ForegroundColor Gray
-        Write-Host $response.Content -ForegroundColor White
-        Write-Host ""
-        Write-Host "You can now login with:" -ForegroundColor Cyan
-        Write-Host "Email: $Email" -ForegroundColor White
-        Write-Host "Password: $Password" -ForegroundColor White
-    } else {
-        Write-Host "✗ Unexpected response status: $($response.StatusCode)" -ForegroundColor Red
-        Write-Host "Response:" -ForegroundColor Gray
-        Write-Host $response.Content -ForegroundColor White
-    }
-} catch {
-    Write-Host "✗ ERROR: Failed to create superadmin account" -ForegroundColor Red
-    Write-Host "Error details:" -ForegroundColor Gray
-    Write-Host $_.Exception.Message -ForegroundColor White
-    if ($_.Exception.Response) {
-        Write-Host "Response content:" -ForegroundColor Gray
-        $stream = $_.Exception.Response.GetResponseStream()
-        $reader = New-Object System.IO.StreamReader($stream)
-        $responseContent = $reader.ReadToEnd()
-        Write-Host $responseContent -ForegroundColor White
-    }
-    exit 1
-}
-
-Write-Host ""
-Write-Host "Script completed." -ForegroundColor Green
+Write-Host "Solola : plus d’inscription HTTP /auth/email/register." -ForegroundColor Cyan
+Write-Host "1. Définis SUPERADMIN_EMAIL, SUPERADMIN_PHONE, SUPERADMIN_PASSWORD, SUPERADMIN_NAME sur le service API." -ForegroundColor Gray
+Write-Host "2. Déploie l’API : le bootstrap crée ou met à jour l’utilisateur SUPERADMIN." -ForegroundColor Gray
+Write-Host "3. Connecte-toi sur /auth avec Firebase (Google recommandé avec le même e-mail)." -ForegroundColor Gray

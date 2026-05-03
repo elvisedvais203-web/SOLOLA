@@ -54,16 +54,6 @@ if (isProduction && corsOrigins.length === 0) {
   throw new Error("CORS_ORIGIN doit contenir au moins une origine en production");
 }
 
-function truthyEnv(raw: string | undefined): boolean {
-  const v = String(raw ?? "")
-    .trim()
-    .toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
-}
-
-/** true si AUTH_FIREBASE_ONLY=1 : désactive inscription / login / reset par e-mail côté API. */
-const authFirebaseOnly = truthyEnv(process.env.AUTH_FIREBASE_ONLY);
-
 export const env = {
   nodeEnv,
   port: Number(process.env.PORT ?? process.env.API_PORT ?? 4000),
@@ -103,6 +93,5 @@ export const env = {
   webPushVapidPrivateKey: process.env.WEB_PUSH_VAPID_PRIVATE_KEY ?? "",
   superAdminEmail: process.env.SUPERADMIN_EMAIL ?? "",
   superAdminPhone: process.env.SUPERADMIN_PHONE ?? "",
-  superAdminPassword: process.env.SUPERADMIN_PASSWORD ?? "",
-  authFirebaseOnly
+  superAdminPassword: process.env.SUPERADMIN_PASSWORD ?? ""
 };

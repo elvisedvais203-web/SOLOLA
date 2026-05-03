@@ -37,27 +37,28 @@
       "name": "Auth",
       "item": [
         {
-          "name": "POST /auth/register",
+          "name": "POST /auth/firebase/verify",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"new@solola.app\",\n  \"password\": \"Password123!\",\n  \"displayName\": \"New User\"\n}"
+              "raw": "{\n  \"idToken\": \"<firebase_id_token_from_client>\",\n  \"displayName\": \"Optional\"\n}"
             },
-            "url": "{{baseUrl}}/auth/register"
+            "url": "{{baseUrl}}/api/auth/firebase/verify",
+            "description": "Échange un ID token Firebase contre les JWT applicatifs. Obtenir idToken côté client Firebase après connexion (Google, Apple, téléphone)."
           }
         },
         {
-          "name": "POST /auth/login",
+          "name": "POST /auth/refresh",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@solola.app\",\n  \"password\": \"Password123!\"\n}"
+              "raw": "{\n  \"refreshToken\": \"<refresh_token_from_firebase_verify_response>\"\n}"
             },
-            "url": "{{baseUrl}}/auth/login"
+            "url": "{{baseUrl}}/api/auth/refresh"
           }
         }
       ]
