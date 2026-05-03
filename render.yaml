@@ -115,3 +115,16 @@ services:
         sync: false
       - key: SUPERADMIN_PASSWORD
         sync: false
+
+  # Page d’auth immersive « Solola Gateway » (Next.js autonome sous apps/solola-gateway)
+  - type: web
+    name: solola-gateway
+    runtime: node
+    plan: starter
+    rootDir: apps/solola-gateway
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production

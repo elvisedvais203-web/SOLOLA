@@ -62,6 +62,7 @@ Built on: Node.js + Express + Prisma + PostgreSQL + Redis + Socket.io (Backend),
 
 ## Project Structure
 - `apps/backend` - REST API, WebSockets, business logic
+- `apps/solola-gateway` - Page d’auth immersive « Solola Gateway » (Next.js)
 - `apps/frontend` - Next.js PWA interface
 - `packages/shared` - Shared types and utilities
 - `db/` - Database schema and scripts
