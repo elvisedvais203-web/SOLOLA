@@ -9,8 +9,9 @@ import { SololaThemedLogo } from "./sololathemedlogo";
 const baseLinks = [
   { href: "/", label: "Accueil", icon: "home" },
   { href: "/reels", label: "Reels", icon: "reels" },
-  { href: "/dashboard", label: "Tableau", icon: "compass" },
+  { href: "/search", label: "Explorer", icon: "compass" },
   { href: "/messages", label: "Messages", icon: "message" },
+  { href: "/shop", label: "Shop", icon: "shop" },
   { href: "/stories", label: "Stories", icon: "story" },
   { href: "/network", label: "Reseau", icon: "users" },
   { href: "/profile", label: "Profil", icon: "profile" },

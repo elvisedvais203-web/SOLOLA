@@ -1,0 +1,5 @@
+-- 2FA + chat lock PIN per member
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "twoFactorSecret" TEXT;
+
+ALTER TABLE "ChatMember" ADD COLUMN IF NOT EXISTS "lockPinHash" TEXT;

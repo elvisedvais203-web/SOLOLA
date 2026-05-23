@@ -21,6 +21,7 @@ export type Conversation = {
   members: ConversationMember[];
   adminIds: string[];
   archived: boolean;
+  locked?: boolean;
   unreadCount: number;
   online: boolean;
   lastMessage: {
@@ -126,6 +127,16 @@ export async function markConversationRead(chatId: string, csrfToken: string) {
     {},
     { headers: { "x-csrf-token": csrfToken } }
   );
+  return data;
+}
+
+export async function lockConversation(chatId: string, pin: string, csrfToken: string) {
+  const { data } = await api.post(`/chats/${chatId}/lock`, { pin }, { headers: { "x-csrf-token": csrfToken } });
+  return data;
+}
+
+export async function unlockConversation(chatId: string, pin: string, csrfToken: string) {
+  const { data } = await api.post(`/chats/${chatId}/unlock`, { pin }, { headers: { "x-csrf-token": csrfToken } });
   return data;
 }
 

@@ -11,6 +11,8 @@ import api from "../lib/nextalkapi";
 import {
   archiveConversation,
   createGroupChat,
+  lockConversation,
+  unlockConversation,
   deleteChatMessage,
   editChatMessage,
   getChatMessages,
@@ -28,6 +30,15 @@ import {
 } from "../services/nextalkchat";
 import { getSuggestions } from "../services/nextalksocial";
 import { getStoredUser, type AppUser } from "../lib/nextalksession";
+import { useSololaPlan } from "../hooks/useSololaPlan";
+import { ChatListSkeleton } from "./sololaskeleton";
+import {
+  decryptChatText,
+  encryptChatText,
+  getStoredE2EPassphrase,
+  isE2EPayload,
+  storeE2EPassphrase
+} from "../lib/sololae2e";
 import { socket } from "../lib/nextalksocket";
 import {
   PREFERENCES_UPDATED_EVENT,
@@ -41,7 +52,6 @@ type Props = {
 };
 
 type ConversationMode = "all" | "private" | "group";
-type ConversationPreset = "all" | "groups" | "work" | "bots";
 
 type UploadDraft = {
   type: ChatMessageType;
@@ -116,7 +126,6 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [conversationQuery, setConversationQuery] = useState("");
   const [conversationMode, setConversationMode] = useState<ConversationMode>("all");
-  const [conversationPreset, setConversationPreset] = useState<ConversationPreset>("all");
   const [messageQuery, setMessageQuery] = useState("");
   const [searchHits, setSearchHits] = useState<ChatMessage[] | null>(null);
   const [text, setText] = useState("");
@@ -147,9 +156,6 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
   const [voiceTranscriptDraftId, setVoiceTranscriptDraftId] = useState<string | null>(null);
   const [voiceTranscriptDraft, setVoiceTranscriptDraft] = useState("");
   const [voiceTranscripts, setVoiceTranscripts] = useState<Record<string, string>>({});
-  const [scheduleAt, setScheduleAt] = useState("");
-  const [ephemeralSec, setEphemeralSec] = useState<number>(0);
-  const [pendingScheduled, setPendingScheduled] = useState<Array<{ id: string; at: number; text: string }>>([]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -169,7 +175,15 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
   const typingStartedRef = useRef(false);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const dragReplyRef = useRef<{ id: string; startX: number; active: boolean } | null>(null);
-  const hasLockedChats = false;
+  const { can: canPlan } = useSololaPlan();
+  const [pinPromptChatId, setPinPromptChatId] = useState<string | null>(null);
+  const [pinInput, setPinInput] = useState("");
+  const [lockPinDraft, setLockPinDraft] = useState("");
+  const [loadingConversations, setLoadingConversations] = useState(true);
+  const [e2eEnabled, setE2eEnabled] = useState(false);
+  const [e2ePassphrase, setE2ePassphrase] = useState("");
+  const [decryptedTexts, setDecryptedTexts] = useState<Record<string, string>>({});
+  const hasLockedChats = useMemo(() => conversations.some((conversation) => conversation.locked), [conversations]);
 
   const displayedMessages = searchHits ?? messages;
 
@@ -178,29 +192,19 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
   const visibleConversations = useMemo(() => {
     const q = conversationQuery.toLowerCase().trim();
     return conversations.filter((conversation) => {
-      if (conversationMode === "private" && conversation.kind !== "PRIVATE") {
+      if (conversationMode === "private" && !conversation.locked) {
         return false;
       }
       if (conversationMode === "group" && conversation.kind !== "GROUP") {
         return false;
       }
       if (!q) {
-        if (conversationPreset === "all") return true;
-        if (conversationPreset === "groups") return conversation.kind === "GROUP";
-        if (conversationPreset === "work") {
-          const stack = `${conversation.title} ${conversation.lastMessage?.text ?? ""}`.toLowerCase();
-          return stack.includes("work") || stack.includes("travail") || stack.includes("business");
-        }
-        if (conversationPreset === "bots") {
-          const stack = `${conversation.title} ${conversation.lastMessage?.text ?? ""}`.toLowerCase();
-          return stack.includes("bot") || stack.includes("assistant");
-        }
         return true;
       }
       const stack = `${conversation.title} ${conversation.members.map((member) => member.displayName).join(" ")} ${conversation.lastMessage?.text ?? ""}`.toLowerCase();
       return stack.includes(q);
     });
-  }, [conversationMode, conversationPreset, conversationQuery, conversations]);
+  }, [conversationMode, conversationQuery, conversations]);
 
   const canCall = useMemo(() => activeChat?.kind === "PRIVATE" && Boolean(me?.id), [activeChat, me?.id]);
 
@@ -215,7 +219,7 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
     try {
       const rows = await getConversations({ q: options?.q ?? conversationQuery, archived: options?.archived ?? showArchived });
       setConversations(rows);
-      if (!activeChatId && rows.length > 0) {
+      if (!activeChatId && rows.length > 0 && !contactId) {
         setActiveChatId(rows[0].id);
         setActiveChat(rows[0]);
       }
@@ -225,6 +229,8 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
     } catch {
       setBackendNotice("Serveur indisponible: certaines fonctions de messagerie peuvent ne pas répondre.");
       setConversations([]);
+    } finally {
+      setLoadingConversations(false);
     }
   };
 
@@ -256,7 +262,13 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
       if (backendNotice) {
         setBackendNotice(null);
       }
-    } catch {
+    } catch (error: unknown) {
+      const status = (error as { response?: { status?: number; data?: { message?: string } } })?.response?.status;
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "";
+      if (status === 403 && String(message).toLowerCase().includes("verrouill")) {
+        setPinPromptChatId(chatId);
+        return;
+      }
       setBackendNotice("Impossible de charger la conversation (serveur indisponible).");
       setMessages([]);
       setActiveChat(null);
@@ -505,35 +517,33 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
     }
   };
 
-  const sendCurrentDraft = async (
-    typeOverride?: ChatMessageType,
-    textOverride?: string,
-    options?: { scheduledTs?: number; ephemeralTtlSec?: number }
-  ) => {
+  const sendCurrentDraft = async (typeOverride?: ChatMessageType, textOverride?: string) => {
     if (!activeChatId) {
       return;
     }
     const csrf = await fetchCsrfToken();
     const replyToMessageId = replyTo?.id ?? undefined;
-    const baseText = textOverride ?? text.trim();
-    const decoratedText =
-      options?.ephemeralTtlSec && options.ephemeralTtlSec > 0
-        ? `${baseText}${baseText ? " " : ""}[TTL:${options.ephemeralTtlSec}s]`
-        : baseText;
     const payload = uploadDraft
       ? {
           type: uploadDraft.type,
           mediaUrl: uploadDraft.mediaUrl,
           fileName: uploadDraft.fileName,
           durationSec: uploadDraft.durationSec,
-          text: decoratedText || undefined,
+          text: text.trim() || undefined,
           replyToMessageId
         }
       : {
           type: typeOverride ?? "TEXT",
-          text: decoratedText,
+          text: textOverride ?? text.trim(),
           replyToMessageId
         };
+
+    if (payload.type === "TEXT" && payload.text && e2eEnabled && canPlan("e2e")) {
+      const pass = e2ePassphrase.trim() || getStoredE2EPassphrase();
+      if (pass) {
+        payload.text = await encryptChatText(activeChatId, payload.text, pass);
+      }
+    }
 
     if (!payload.text && !payload.mediaUrl && payload.type !== "STICKER") {
       return;
@@ -546,46 +556,8 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
     setShowEmoji(false);
     setShowSticker(false);
     setReplyTo(null);
-    setScheduleAt("");
     await refreshConversations();
     requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: smoothBehavior }));
-
-    if (options?.ephemeralTtlSec && options.ephemeralTtlSec > 0) {
-      window.setTimeout(() => {
-        setMessages((prev) => prev.filter((m) => m.id !== created.id));
-      }, options.ephemeralTtlSec * 1000);
-    }
-  };
-
-  const sendWithScheduling = async () => {
-    if (!scheduleAt) {
-      await sendCurrentDraft(undefined, undefined, { ephemeralTtlSec: ephemeralSec || undefined });
-      return;
-    }
-    const when = new Date(scheduleAt).getTime();
-    if (!Number.isFinite(when) || when <= Date.now()) {
-      setCallNotice("Horaire invalide pour message programmé.");
-      return;
-    }
-    const id = `sched-${Date.now()}`;
-    setPendingScheduled((prev) => [...prev, { id, at: when, text: text.trim() || uploadDraft?.fileName || "Message" }]);
-    const delay = Math.max(0, when - Date.now());
-    window.setTimeout(() => {
-      void sendCurrentDraft(undefined, undefined, { ephemeralTtlSec: ephemeralSec || undefined });
-      setPendingScheduled((prev) => prev.filter((item) => item.id !== id));
-    }, delay);
-    setText("");
-    setUploadDraft(null);
-    setScheduleAt("");
-    setCallNotice("Message programmé.");
-  };
-
-  const forwardMessage = (message: ChatMessage) => {
-    const excerpt =
-      message.text?.trim() ||
-      (message.type === "IMAGE" ? "[Image]" : message.type === "VIDEO" ? "[Video]" : message.type === "VOICE" ? "[Vocal]" : "[Message]");
-    setText((prev) => `${prev ? `${prev}\n` : ""}↪ Transfere: ${excerpt}`);
-    setCallNotice("Message transféré dans le brouillon.");
   };
 
   useEffect(() => {
@@ -820,6 +792,47 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
     router.push(`/messages/${chatId}`);
   };
 
+  const trySelectConversation = (chatId: string) => {
+    const conversation = conversations.find((row) => row.id === chatId);
+    if (conversation?.locked && !sessionStorage.getItem(`solola_unlocked_${chatId}`)) {
+      setPinPromptChatId(chatId);
+      return;
+    }
+    selectConversation(chatId);
+  };
+
+  const submitUnlockPin = async () => {
+    if (!pinPromptChatId) {
+      return;
+    }
+    try {
+      const csrf = await fetchCsrfToken();
+      await unlockConversation(pinPromptChatId, pinInput.trim(), csrf);
+      sessionStorage.setItem(`solola_unlocked_${pinPromptChatId}`, "1");
+      setPinPromptChatId(null);
+      setPinInput("");
+      selectConversation(pinPromptChatId);
+    } catch {
+      setCallNotice("PIN incorrect.");
+    }
+  };
+
+  const lockActiveChat = async () => {
+    if (!activeChatId || !/^\d{4,8}$/.test(lockPinDraft.trim())) {
+      setCallNotice("PIN invalide (4 a 8 chiffres).");
+      return;
+    }
+    try {
+      const csrf = await fetchCsrfToken();
+      await lockConversation(activeChatId, lockPinDraft.trim(), csrf);
+      setLockPinDraft("");
+      setCallNotice("Conversation verrouillee.");
+      await refreshConversations();
+    } catch {
+      setCallNotice("Impossible de verrouiller la conversation.");
+    }
+  };
+
   const loadOlderMessages = async () => {
     if (!activeChatId || !nextCursor) {
       return;
@@ -948,6 +961,27 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChatId, me?.id]);
 
+  useEffect(() => {
+    if (!activeChatId) {
+      setDecryptedTexts({});
+      return;
+    }
+    const pass = e2ePassphrase.trim() || getStoredE2EPassphrase();
+    void Promise.all(
+      messages.map(async (message) => {
+        if (!message.text) {
+          return [message.id, ""] as const;
+        }
+        if (isE2EPayload(message.text)) {
+          return [message.id, await decryptChatText(activeChatId, message.text, pass)] as const;
+        }
+        return [message.id, message.text] as const;
+      })
+    ).then((rows) => setDecryptedTexts(Object.fromEntries(rows)));
+  }, [messages, activeChatId, e2ePassphrase]);
+
+  const messageText = (message: ChatMessage) => decryptedTexts[message.id] ?? message.text ?? "";
+
   const generateIcebreakers = async () => {
     try {
       setIcebreakerLoading(true);
@@ -1020,23 +1054,6 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
           </button>
           {callNotice && <span className="rounded-full bg-white/5 px-3 py-2 text-xs text-slate-300">{callNotice}</span>}
         </div>
-        <div className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 p-2">
-          {([
-            { id: "all", label: "All" },
-            { id: "groups", label: "Groups" },
-            { id: "work", label: "WORK" },
-            { id: "bots", label: "Bots" }
-          ] as const).map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setConversationPreset(item.id)}
-              className={`rounded-full px-3 py-1.5 text-xs ${conversationPreset === item.id ? "bg-neoblue text-[#07101f]" : "bg-white/10 text-slate-300"}`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
 
         {showGroupComposer && (
           <div className="glass mb-4 rounded-3xl p-4">
@@ -1074,20 +1091,25 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
 
         <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
           <aside className="glass rounded-3xl p-3">
-            <div className="max-h-[72vh] min-h-[72vh] space-y-2 overflow-y-auto pr-1">
-              {visibleConversations.map((conversation) => {
+            <div className="max-h-[72vh] min-h-[52vh] space-y-2 overflow-y-auto pr-1">
+              {loadingConversations ? <ChatListSkeleton /> : null}
+              {!loadingConversations &&
+                visibleConversations.map((conversation) => {
                 const active = conversation.id === activeChatId;
                 return (
                   <button
                     key={conversation.id}
-                    onClick={() => selectConversation(conversation.id)}
+                    onClick={() => trySelectConversation(conversation.id)}
                     className={`w-full rounded-3xl border px-3 py-3 text-left transition ${
                       active ? "border-neoblue/50 bg-neoblue/10" : "border-white/10 bg-white/5 hover:bg-white/10"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-sm font-semibold text-white">{conversation.title}</p>
+                        <p className="text-sm font-semibold text-white">
+                          {conversation.title}
+                          {conversation.locked ? <span className="ml-1 text-amber-300">🔒</span> : null}
+                        </p>
                         <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400">
                           {conversation.kind === "GROUP" ? `${conversation.memberCount} membres` : conversation.online ? "en ligne" : "hors ligne"}
                         </p>
@@ -1102,11 +1124,13 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
                   </button>
                 );
               })}
-              {visibleConversations.length === 0 && <p className="px-2 py-4 text-sm text-slate-400">Aucune conversation disponible pour le moment.</p>}
+              {!loadingConversations && visibleConversations.length === 0 ? (
+                <p className="px-2 py-4 text-sm text-slate-400">Aucune conversation disponible pour le moment.</p>
+              ) : null}
             </div>
           </aside>
 
-          <div className="glass flex min-h-[72vh] max-h-[72vh] flex-col rounded-3xl p-4">
+          <div className="glass flex min-h-[72vh] flex-col rounded-3xl p-4">
             {!activeChat && <p className="text-sm text-slate-300">Choisissez un chat pour commencer.</p>}
 
             {activeChat && (
@@ -1138,7 +1162,7 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
                       className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-sm outline-none"
                       placeholder="Rechercher dans la conversation"
                     />
-                    {canCall && (
+                    {canCall && canPlan("calls") && (
                       <>
                         <button onClick={() => void startCall("audio")} className="rounded-2xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20">
                           Appel audio
@@ -1148,9 +1172,42 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
                         </button>
                       </>
                     )}
+                    {!activeChat.locked ? (
+                      <input
+                        value={lockPinDraft}
+                        onChange={(e) => setLockPinDraft(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                        placeholder="PIN verrou"
+                        className="w-24 rounded-2xl border border-white/10 bg-black/25 px-2 py-2 text-sm outline-none"
+                      />
+                    ) : null}
+                    {!activeChat.locked ? (
+                      <button onClick={() => void lockActiveChat()} className="rounded-2xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20">
+                        Verrouiller
+                      </button>
+                    ) : null}
                     <button onClick={() => void toggleArchive()} className="rounded-2xl bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20">
                       {activeChat.archived ? "Retirer archive" : "Archiver"}
                     </button>
+                    {canPlan("e2e") ? (
+                      <>
+                        <input
+                          value={e2ePassphrase}
+                          onChange={(e) => {
+                            setE2ePassphrase(e.target.value);
+                            storeE2EPassphrase(e.target.value);
+                          }}
+                          placeholder="Passphrase E2E"
+                          className="w-28 rounded-2xl border border-white/10 bg-black/25 px-2 py-2 text-sm outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setE2eEnabled((prev) => !prev)}
+                          className={`rounded-2xl px-3 py-2 text-sm ${e2eEnabled ? "bg-neoblue text-[#07101f]" : "bg-white/10 text-white"}`}
+                        >
+                          E2E {e2eEnabled ? "ON" : "OFF"}
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 </header>
 
@@ -1267,7 +1324,7 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
                                 </div>
                               )}
                               {message.type === "TEXT" || message.type === "STICKER" ? (
-                                <p className="text-sm text-white">{message.text}</p>
+                                <p className="text-sm text-white">{messageText(message)}</p>
                               ) : null}
                               {message.type === "IMAGE" && message.mediaUrl ? (
                                 <div>
@@ -1277,7 +1334,7 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
                                       Telecharger
                                     </a>
                                   )}
-                                  {message.text && <p className="mt-2 text-sm text-slate-100">{message.text}</p>}
+                                  {messageText(message) && <p className="mt-2 text-sm text-slate-100">{messageText(message)}</p>}
                                 </div>
                               ) : null}
                               {message.type === "VIDEO" && message.mediaUrl ? (
@@ -1288,7 +1345,7 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
                                       Telecharger
                                     </a>
                                   )}
-                                  {message.text && <p className="mt-2 text-sm text-slate-100">{message.text}</p>}
+                                  {messageText(message) && <p className="mt-2 text-sm text-slate-100">{messageText(message)}</p>}
                                 </div>
                               ) : null}
                               {message.type === "VOICE" && message.mediaUrl ? (
@@ -1338,7 +1395,7 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
                                       Telecharger
                                     </a>
                                   )}
-                                  {message.text && <p className="mt-2 text-sm text-slate-100">{message.text}</p>}
+                                  {messageText(message) && <p className="mt-2 text-sm text-slate-100">{messageText(message)}</p>}
                                 </div>
                               ) : null}
                             </>
@@ -1364,11 +1421,6 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
                             {mine && !message.deletedAt && (
                               <button onClick={() => void removeMessage(message.id)} className="rounded-full bg-white/10 px-2 py-1 text-xs text-slate-200 hover:bg-white/20">
                                 Supprimer
-                              </button>
-                            )}
-                            {!message.deletedAt && (
-                              <button onClick={() => forwardMessage(message)} className="rounded-full bg-white/10 px-2 py-1 text-xs text-slate-200 hover:bg-white/20">
-                                Transferer
                               </button>
                             )}
                           </div>
@@ -1441,34 +1493,6 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
                     <button onClick={() => void toggleRecorder()} className={`rounded-full px-3 py-2 text-sm ${isRecordingMine ? "bg-amber-400 text-[#08101d]" : "bg-white/10 text-white"}`}>
                       {isRecordingMine ? "Stop micro" : "Micro"}
                     </button>
-                    <label className="rounded-full bg-white/10 px-3 py-2 text-sm text-white">
-                      Ephemere
-                      <select
-                        value={ephemeralSec}
-                        onChange={(e) => setEphemeralSec(Number(e.target.value))}
-                        className="ml-2 bg-transparent text-xs outline-none"
-                      >
-                        <option value={0}>Off</option>
-                        <option value={30}>30s</option>
-                        <option value={60}>1m</option>
-                        <option value={300}>5m</option>
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <label className="text-xs text-slate-300">Programmer:</label>
-                    <input
-                      type="datetime-local"
-                      value={scheduleAt}
-                      onChange={(e) => setScheduleAt(e.target.value)}
-                      className="rounded-xl border border-white/10 bg-black/20 px-2 py-1 text-xs text-slate-200 outline-none"
-                    />
-                    {pendingScheduled.length > 0 ? (
-                      <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-slate-300">
-                        {pendingScheduled.length} message(s) programme(s)
-                      </span>
-                    ) : null}
                   </div>
 
                   {icebreakers.length > 0 && (
@@ -1514,11 +1538,11 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
                       placeholder="Ecrivez un message, ajoutez un media, ou envoyez une note vocale"
                     />
                     <button
-                      onClick={() => void sendWithScheduling()}
+                      onClick={() => void sendCurrentDraft()}
                       disabled={uploadingMedia}
                       className="rounded-2xl bg-neoblue px-4 py-3 text-sm font-semibold text-[#07101f]"
                     >
-                      {scheduleAt ? "Programmer" : text.trim() || uploadDraft ? "Envoyer" : "Pret"}
+                      {text.trim() || uploadDraft ? "Envoyer" : "Pret"}
                     </button>
                   </div>
 
@@ -1555,6 +1579,37 @@ export function UltraTelegramChat({ contactId, initialShowArchived = false }: Pr
             )}
           </div>
         </div>
+
+        {pinPromptChatId ? (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#02040c]/85 p-4 backdrop-blur">
+            <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#07101c] p-5">
+              <h3 className="font-heading text-xl text-white">Conversation verrouillee</h3>
+              <p className="mt-2 text-sm text-slate-300">Entrez votre PIN pour ouvrir ce chat.</p>
+              <input
+                value={pinInput}
+                onChange={(event) => setPinInput(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                inputMode="numeric"
+                placeholder="PIN"
+                className="mt-4 w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-center text-lg tracking-[0.3em] outline-none"
+              />
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinPromptChatId(null);
+                    setPinInput("");
+                  }}
+                  className="flex-1 rounded-2xl bg-white/10 px-3 py-2 text-sm text-white"
+                >
+                  Annuler
+                </button>
+                <button type="button" onClick={() => void submitUnlockPin()} className="flex-1 rounded-2xl bg-neoblue px-3 py-2 text-sm font-semibold text-[#07101f]">
+                  Deverrouiller
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {(incomingCall || callMode) && (
           <div className="fixed inset-0 z-50 bg-[#02040c]/90 p-4 backdrop-blur">

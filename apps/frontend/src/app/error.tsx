@@ -25,7 +25,7 @@ export default function GlobalErrorPage({
         <button onClick={reset} className="rounded-xl bg-neoblue px-4 py-2 font-semibold text-[#041127]">
           Reessayer
         </button>
-        <a href="/dashboard" className="rounded-xl border border-white/20 px-4 py-2 text-slate-200">
+        <a href="/" className="rounded-xl border border-white/20 px-4 py-2 text-slate-200">
           Retour tableau de bord
         </a>
       </div>

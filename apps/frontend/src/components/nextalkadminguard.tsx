@@ -16,7 +16,7 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
 
     const user = getStoredUser();
     if (!canAccessAdmin(user)) {
-      router.replace("/dashboard");
+      router.replace("/");
       return;
     }
 

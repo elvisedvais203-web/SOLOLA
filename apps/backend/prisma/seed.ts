@@ -169,13 +169,10 @@ async function main() {
   if (env.superAdminEmail && env.superAdminPhone && env.superAdminPassword) {
     const superAdminPhone = normalizeRdcPhone(env.superAdminPhone);
     const superAdminHash = await bcrypt.hash(env.superAdminPassword, 12);
-    const superAdminName = (process.env.SUPERADMIN_NAME ?? "Super Admin").trim() || "Super Admin";
-    const nameParts = superAdminName.split(/\s+/).filter(Boolean);
-    const superFirst = nameParts[0] ?? "Super";
-    const superLast = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "-";
+    const superAdminName = process.env.SUPERADMIN_NAME ?? "Super Admin";
     const superAdminCreatedAt = process.env.SUPERADMIN_CREATED_AT ? new Date(process.env.SUPERADMIN_CREATED_AT) : undefined;
 
-    const superUser = await prisma.user.upsert({
+    await prisma.user.upsert({
       where: { phone: superAdminPhone },
       update: {
         email: env.superAdminEmail,
@@ -195,8 +192,6 @@ async function main() {
         profile: {
           create: {
             displayName: superAdminName,
-            firstName: superFirst,
-            lastName: superLast,
             bio: "Compte fondateur",
             city: "Kinshasa",
             interests: ["admin", "security", "growth"],
@@ -205,29 +200,40 @@ async function main() {
         }
       }
     });
+  }
 
-    await prisma.profile.upsert({
-      where: { userId: superUser.id },
-      update: {
-        displayName: superAdminName,
-        firstName: superFirst,
-        lastName: superLast,
-        bio: "Compte fondateur",
-        city: "Kinshasa",
-        interests: ["admin", "security", "growth"],
-        verifiedBadge: true
-      },
-      create: {
-        userId: superUser.id,
-        displayName: superAdminName,
-        firstName: superFirst,
-        lastName: superLast,
-        bio: "Compte fondateur",
-        city: "Kinshasa",
-        interests: ["admin", "security", "growth"],
-        verifiedBadge: true
-      }
-    });
+  const shopCatalog = [
+    {
+      title: "Pack stickers Pro",
+      description: "Collection exclusive de stickers animés.",
+      priceCents: 299,
+      currency: "EUR",
+      category: "digital",
+      imageUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400"
+    },
+    {
+      title: "Theme néon Solola",
+      description: "Personnalisation premium de l'interface.",
+      priceCents: 499,
+      currency: "EUR",
+      category: "digital",
+      imageUrl: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400"
+    },
+    {
+      title: "Boost visibilité 7 jours",
+      description: "Mise en avant de ton profil dans Explorer.",
+      priceCents: 999,
+      currency: "EUR",
+      category: "boost",
+      imageUrl: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=400"
+    }
+  ];
+
+  for (const item of shopCatalog) {
+    const existing = await prisma.shopItem.findFirst({ where: { title: item.title } });
+    if (!existing) {
+      await prisma.shopItem.create({ data: item });
+    }
   }
 }
 

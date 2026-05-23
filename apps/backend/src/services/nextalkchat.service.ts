@@ -4,6 +4,7 @@ import { checkMessageSpam } from "./nextalkspam-detection.service";
 import { canSendMessage } from "./nextalkmessage.service";
 import { ApiError } from "../utils/nextalkapierror";
 import { writeAuditLog } from "./nextalkaudit.service";
+import { assertChatUnlocked } from "./nextalkaccount-security.service";
 
 const ONLINE_WINDOW_MS = 45_000;
 
@@ -109,6 +110,7 @@ function mapConversation(chat: Prisma.ChatGetPayload<{ include: ReturnType<typeo
     })),
     adminIds: chat.members.filter((member) => member.role === ChatMemberRole.ADMIN).map((member) => member.userId),
     archived: Boolean(chat.members.find((member) => member.userId === currentUserId)?.archivedAt),
+    locked: Boolean(chat.members.find((member) => member.userId === currentUserId)?.lockPinHash),
     unreadCount,
     online: Boolean(counterpart?.profile?.lastActiveAt && counterpart.profile.lastActiveAt >= nowMinusOnlineWindow()),
     lastMessage: lastMessage
@@ -284,6 +286,7 @@ export async function getConversation(userId: string, chatId: string) {
 
 export async function listChatMessages(userId: string, chatId: string, query: MessageQuery) {
   await ensureChatMember(chatId, userId);
+  await assertChatUnlocked(userId, chatId);
 
   const messages = await prisma.chatMessage.findMany({
     where: {

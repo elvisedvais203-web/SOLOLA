@@ -246,6 +246,10 @@ export default function SettingsPage() {
       router.push("/profile");
       return;
     }
+    if (row.id === "2fa" || row.id === "sessions" || row.id === "export") {
+      router.push("/settings/security");
+      return;
+    }
     setFeedback(`Navigation : ${row.title}`);
   };
 

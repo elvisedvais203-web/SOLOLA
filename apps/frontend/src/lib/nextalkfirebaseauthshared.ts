@@ -16,7 +16,7 @@ export const FIREBASE_CONFIGURED = Boolean(
 
 /** Évite les redirections ouvertes via ?next=https://... */
 export function sanitizeNextPath(raw: string | null): string {
-  const fallback = "/dashboard";
+  const fallback = "/";
   if (raw == null || typeof raw !== "string") return fallback;
   const t = raw.trim();
   if (!t.startsWith("/") || t.startsWith("//")) return fallback;

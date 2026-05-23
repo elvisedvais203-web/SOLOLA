@@ -1,8 +1,6 @@
 node_modules/
 .env
 .env.*
-!.env.example
-!**/.env.example
 .next/
 *.tsbuildinfo
 dist/
@@ -12,16 +10,9 @@ coverage/
 .redis-data/
 tmp/
 apps/frontend/.next-run/
-mobile/android/NextalkMobileAndroid/.gradle/
-serviceAccountKey.json
-**/serviceAccountKey.json
-# CLI / archives locales (ne pas versionner les binaires)
-tools/**/*.exe
-tools/**/*.zip
-*.pem
-*.key
-*.p12
 apps/frontend/public/sw.js
-apps/frontend/public/sw.js.map
 apps/frontend/public/workbox-*.js
-apps/frontend/public/workbox-*.js.map
+packages/shared/node_modules/
+tools/render-cli/*.exe
+tools/render-cli/*.zip
+mobile/android/NextalkMobileAndroid/.gradle/

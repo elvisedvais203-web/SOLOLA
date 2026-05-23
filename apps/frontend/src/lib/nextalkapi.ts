@@ -9,7 +9,6 @@ export type AuthApiSessionResponse = {
   user: AppUser;
 };
 
-/** Render cold start : 20 s suffisent rarement ; auth peut dépasser sans être bloqué côté client. */
 const DEFAULT_AXIOS_TIMEOUT_MS = 55000;
 
 const api = axios.create({
@@ -19,8 +18,6 @@ const api = axios.create({
 });
 
 let refreshPromise: Promise<string> | null = null;
-
-/** En prod navigateur : première base candidate absolue pour éviter /api bloqué. */
 let clientBackendBootstrap: Promise<void> | null = null;
 
 function isBrowserProd(): boolean {
@@ -29,10 +26,6 @@ function isBrowserProd(): boolean {
   return h !== "localhost" && h !== "127.0.0.1";
 }
 
-/**
- * En prod navigateur, la base axios reste `/api` (proxy same-origin) par défaut.
- * N’activer le backend en direct que si l’API expose un CORS correct pour ton domaine.
- */
 function useBrowserDirectApi(): boolean {
   return process.env.NEXT_PUBLIC_API_DIRECT === "1";
 }
@@ -43,10 +36,6 @@ function pushUniqueApiBase(list: string[], raw: string | undefined): void {
   if (!list.includes(u)) list.push(u);
 }
 
-/**
- * URLs /api à essayer en ordre : runtime Next, puis build, puis repli déploiement.
- * Permet de contourner une seule URL mal configurée ou un service Render endormi.
- */
 export async function getOrderedApiBases(): Promise<string[]> {
   const bases: string[] = [];
 
@@ -94,12 +83,10 @@ async function ensureClientDirectBackendBase(): Promise<void> {
   await clientBackendBootstrap;
 }
 
-/** À appeler tôt (ex. page /auth) pour que la base soit prête avant le premier POST. */
 export async function prewarmClientApiBase(): Promise<void> {
   await ensureClientDirectBackendBase();
 }
 
-/** Force le repli Render par défaut (ex. nouvelle tentative après ERR_NETWORK). */
 export function forceApiDeployFallbackBase(): void {
   if (isBrowserProd() && useBrowserDirectApi()) {
     api.defaults.baseURL = DEPLOY_FALLBACK_API_BASE;
@@ -129,9 +116,6 @@ function isRetriableApiFailure(error: unknown): boolean {
   return isAxiosNetworkError(error) || isTransientServerError(error);
 }
 
-/**
- * POST auth : même pipeline axios ; l’intercepteur réponse essaie les autres bases si réseau / 502 / 503 / 504.
- */
 export async function apiPostAuthWithResilience<T extends AuthApiSessionResponse = AuthApiSessionResponse>(
   path: string,
   body: Record<string, unknown>
@@ -178,7 +162,6 @@ api.interceptors.response.use(
         status === 401 ||
         (status === 403 && (message.includes("banni") || message.includes("suspendu") || message.includes("session invalidee")));
 
-      // One-shot refresh flow (retry the original request once).
       const original = error?.config as (typeof error)["config"] & { _klRetried?: boolean };
       const canTryRefresh =
         status === 401 &&

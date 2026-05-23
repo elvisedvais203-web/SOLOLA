@@ -2,6 +2,7 @@ import { Router } from "express";
 import { authGuard } from "../middleware/nextalkauth";
 import { csrfGuard } from "../middleware/nextalkcsrf";
 import { messageLimiter } from "../middleware/nextalksecurity";
+import { lockChat, removeLock, unlockChat } from "../controllers/nextalkaccount-security.controller";
 import {
   addMember,
   broadcastToChannel,
@@ -39,6 +40,9 @@ router.get("/:chatId/search", authGuard, searchChatMessages);
 router.post("/:chatId/messages", authGuard, csrfGuard, messageLimiter, postChatMessage);
 router.post("/:chatId/read", authGuard, csrfGuard, readConversation);
 router.post("/:chatId/archive", authGuard, csrfGuard, toggleArchiveConversation);
+router.post("/:chatId/lock", authGuard, csrfGuard, lockChat);
+router.post("/:chatId/unlock", authGuard, csrfGuard, unlockChat);
+router.delete("/:chatId/lock", authGuard, csrfGuard, removeLock);
 router.patch("/messages/:messageId", authGuard, csrfGuard, patchChatMessage);
 router.delete("/messages/:messageId", authGuard, csrfGuard, removeChatMessage);
 router.post("/messages/:messageId/reactions", authGuard, csrfGuard, reactChatMessage);

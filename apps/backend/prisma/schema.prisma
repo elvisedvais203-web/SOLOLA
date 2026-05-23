@@ -95,34 +95,6 @@ enum ContentClassification {
   SCAM
 }
 
-// Live Streaming & Video Calls Enums
-enum StreamStatus {
-  SCHEDULED
-  LIVE
-  ENDED
-  CANCELLED
-}
-
-enum CallStatus {
-  RINGING
-  ACCEPTED
-  ONGOING
-  ENDED
-  REJECTED
-  MISSED
-  CANCELLED
-}
-
-enum CallType {
-  AUDIO
-  VIDEO
-}
-
-enum CallDirection {
-  INCOMING
-  OUTGOING
-}
-
 enum ModerationSeverity {
   LOW
   MEDIUM
@@ -176,6 +148,7 @@ model User {
   messages         Message[]
   subscriptions    Subscription[]
   payments         Payment[]
+  shopOrders       ShopOrder[]
   reportsMade      UserReport[]  @relation("ReportsMade")
   reportsReceived  UserReport[]  @relation("ReportsReceived")
   auditLogs        AuditLog[]
@@ -190,6 +163,8 @@ model User {
   settings         UserSettings?
   loginEvents      LoginEvent[]
   firebaseUid      String?           @unique
+  twoFactorEnabled Boolean           @default(false)
+  twoFactorSecret  String?
   passwordResetTokens PasswordResetToken[]
   feedPosts        FeedPost[]        @relation("UserFeedPosts")
   feedPostLikes    FeedPostLike[]    @relation("UserFeedPostLikes")
@@ -208,12 +183,6 @@ model User {
   behaviorMetrics  UserBehaviorMetric?
   coordinatedAbuseAlertsTarget CoordinatedAbuseAlert[] @relation("CoordinatedAbuseAlertTarget")
   coordinatedAbuseAlertsInvestigator CoordinatedAbuseAlert[] @relation("CoordinatedAbuseAlertInvestigator")
-  // Live Streaming & Video Calls
-  liveStreams      LiveStream[]           @relation("LiveStreamBroadcaster")
-  liveViewings     LiveStreamViewer[]
-  videoCallsInitiated VideoCall[]         @relation("VideoCallInitiator")
-  videoCallsReceived VideoCall[]          @relation("VideoCallRecipient")
-  videoCallParticipants VideoCallParticipant[]
 }
 
 model PasswordResetToken {
@@ -234,8 +203,6 @@ model Profile {
   id            String   @id @default(uuid())
   userId        String   @unique
   displayName   String
-  firstName     String?
-  lastName      String?
   bio           String?
   city          String?
   latitude      Float?
@@ -495,6 +462,34 @@ model Payment {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model ShopItem {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  priceCents  Int
+  currency    String   @default("EUR")
+  imageUrl    String?
+  category    String   @default("digital")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders ShopOrder[]
+}
+
+model ShopOrder {
+  id        String        @id @default(uuid())
+  userId    String
+  itemId    String
+  status    PaymentStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item ShopItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
 model UserReport {
   id             String   @id @default(uuid())
   reporterId     String
@@ -547,6 +542,7 @@ model ChatMember {
   userId      String
   role        ChatMemberRole @default(MEMBER)
   archivedAt  DateTime?
+  lockPinHash String?
   lastReadAt  DateTime?
   joinedAt    DateTime       @default(now())
 
@@ -753,137 +749,4 @@ model CoordinatedAbuseAlert {
   @@index([targetUserId, detectedAt])
   @@index([confidence, detectedAt])
   @@index([status])
-}
-
-// ==================== LIVE STREAMING MODELS ====================
-
-model LiveStream {
-  id                String        @id @default(uuid())
-  broadcasterId     String
-  title             String
-  description       String?
-  thumbnailUrl      String?
-  agoraChannelId    String        @unique        // Agora SDK channel
-  agoraResourceId   String?                      // Recording resource ID
-  status            StreamStatus  @default(SCHEDULED)
-  visibility        PrivacyMode   @default(PUBLIC)
-  allowComments     Boolean       @default(true)
-  categoryId        String?                      // e.g., "music", "gaming", "cooking"
-  tags              String[]      @default([])
-  scheduledAt       DateTime?
-  startedAt         DateTime?
-  endedAt           DateTime?
-  maxConcurrentViewers Int?
-  peakViewerCount   Int           @default(0)
-  viewerCountNow    Int           @default(0)
-  totalViews        Int           @default(0)
-  duration          Int?                         // in seconds
-  recordingUrl      String?
-  isRecorded        Boolean       @default(false)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-
-  broadcaster       User          @relation("LiveStreamBroadcaster", fields: [broadcasterId], references: [id], onDelete: Cascade)
-  viewers           LiveStreamViewer[]
-  comments          LiveStreamComment[]
-
-  @@index([status, createdAt])
-  @@index([broadcasterId, createdAt])
-  @@index([visibility, status])
-  @@index([createdAt])
-}
-
-model LiveStreamViewer {
-  id                String        @id @default(uuid())
-  streamId          String
-  viewerId          String
-  joinedAt          DateTime      @default(now())
-  leftAt            DateTime?
-  watchedDuration   Int           @default(0)      // in seconds
-  reacted           Boolean       @default(false)
-
-  stream            LiveStream    @relation(fields: [streamId], references: [id], onDelete: Cascade)
-  viewer            User          @relation(fields: [viewerId], references: [id], onDelete: Cascade)
-
-  @@unique([streamId, viewerId])
-  @@index([streamId, joinedAt])
-  @@index([viewerId, joinedAt])
-}
-
-model LiveStreamComment {
-  id                String        @id @default(uuid())
-  streamId          String
-  userId            String
-  text              String
-  createdAt         DateTime      @default(now())
-
-  stream            LiveStream    @relation(fields: [streamId], references: [id], onDelete: Cascade)
-
-  @@index([streamId, createdAt])
-}
-
-// ==================== VIDEO CALL MODELS ====================
-
-model VideoCall {
-  id                String        @id @default(uuid())
-  initiatorId       String
-  recipientId       String
-  type              CallType      @default(VIDEO)
-  status            CallStatus    @default(RINGING)
-  direction         CallDirection @default(OUTGOING)
-  agoraChannelId    String        @unique         // Agora SDK channel
-  agoraToken        String?                       // Temporary access token
-  startedAt         DateTime?
-  endedAt           DateTime?
-  duration          Int?                          // in seconds
-  recordingUrl      String?
-  isRecorded        Boolean       @default(false)
-  wasAnswered       Boolean       @default(false)
-  rejectionReason   String?                       // "DECLINED", "BUSY", "UNREACHABLE"
-  createdAt         DateTime      @default(now())
-
-  initiator         User          @relation("VideoCallInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
-  recipient         User          @relation("VideoCallRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
-  participants      VideoCallParticipant[]
-  recordings        CallRecording[]
-
-  @@index([initiatorId, createdAt])
-  @@index([recipientId, createdAt])
-  @@index([status, createdAt])
-}
-
-model VideoCallParticipant {
-  id                String        @id @default(uuid())
-  callId            String
-  userId            String
-  joinedAt          DateTime      @default(now())
-  leftAt            DateTime?
-  agoraUid          Int                          // Agora UID (must be integer)
-  audioEnabled      Boolean       @default(true)
-  videoEnabled      Boolean       @default(true)
-  screenSharing     Boolean       @default(false)
-  isMuted           Boolean       @default(false)
-  networkQuality    Int           @default(0)    // 0-6, where 0 is unknown, 1 is excellent
-
-  call              VideoCall     @relation(fields: [callId], references: [id], onDelete: Cascade)
-  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([callId, userId])
-  @@index([callId, joinedAt])
-  @@index([userId, joinedAt])
-}
-
-model CallRecording {
-  id                String        @id @default(uuid())
-  callId            String
-  recordingUrl      String
-  duration          Int                          // in seconds
-  fileSize          Int                          // in bytes
-  storageProvider   String        @default("cloudinary")  // "cloudinary", "s3", "azure"
-  createdAt         DateTime      @default(now())
-
-  call              VideoCall     @relation(fields: [callId], references: [id], onDelete: Cascade)
-
-  @@index([callId])
-  @@index([createdAt])
 }

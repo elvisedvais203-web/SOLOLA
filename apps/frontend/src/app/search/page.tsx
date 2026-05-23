@@ -8,6 +8,7 @@ import { getStoryFeed } from "../../services/nextalkstories";
 import { AuthGuard } from "../../components/nextalkauthguard";
 import { ExploreGridSkeleton } from "../../components/sololaskeleton";
 import { SectionHeader } from "../../components/nextalksectionheader";
+import { getAiRecommendations } from "../../services/nextalkai";
 import { getFeed } from "../../services/nextalksocial";
 
 type RecentSearch = { q: string; ts: number };
@@ -52,6 +53,7 @@ export default function SearchPage() {
   const [exploreGrid, setExploreGrid] = useState<{ id: string; mediaUrl: string; isVideo: boolean }[]>([]);
   const [exploreLoading, setExploreLoading] = useState(true);
   const [recent, setRecent] = useState<RecentSearch[]>([]);
+  const [aiPeople, setAiPeople] = useState<any[]>([]);
 
   useEffect(() => {
     setRecent(loadRecent());
@@ -59,6 +61,10 @@ export default function SearchPage() {
     getSuggestions(12)
       .then((rows) => setPopularPeople(Array.isArray(rows) ? rows : []))
       .catch(() => setPopularPeople([]));
+
+    getAiRecommendations({})
+      .then((data) => setAiPeople(data?.people ?? []))
+      .catch(() => setAiPeople([]));
 
     getStoryFeed()
       .then((rows: any[]) => {
@@ -252,6 +258,22 @@ export default function SearchPage() {
                 ))}
               </div>
             ) : null}
+          </div>
+
+          <div className="glass mt-4 rounded-3xl p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Recommandations IA</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 md:grid-cols-4">
+              {aiPeople.length === 0 ? <p className="text-sm text-slate-400">Aucune recommandation pour le moment.</p> : null}
+              {aiPeople.slice(0, 8).map((p) => (
+                <div key={p.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p className="truncate text-sm font-semibold text-white">{p.displayName}</p>
+                  <p className="text-xs text-neoblue">{p.compatibilityPercent}% compatibilite</p>
+                  <Link href={`/profile/${p.id}`} className="wa-pill mt-2 inline-flex px-3 py-1.5 text-xs">
+                    Voir profil
+                  </Link>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">

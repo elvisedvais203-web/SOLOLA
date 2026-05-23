@@ -109,6 +109,34 @@ final class ProfileStore: ObservableObject {
     }
   }
 
+  func signInEmail(email: String, password: String) async {
+    isLoading = true
+    error = nil
+    do {
+      let res = try await auth.signIn(withEmail: email, password: password)
+      let token = try await res.user.getIDToken()
+      UserDefaults.standard.set(token, forKey: SessionKeys.firebaseIdToken)
+      startListening(uid: res.user.uid)
+    } catch {
+      isLoading = false
+      self.error = error.localizedDescription
+    }
+  }
+
+  func signUpEmail(email: String, password: String) async {
+    isLoading = true
+    error = nil
+    do {
+      let res = try await auth.createUser(withEmail: email, password: password)
+      let token = try await res.user.getIDToken()
+      UserDefaults.standard.set(token, forKey: SessionKeys.firebaseIdToken)
+      startListening(uid: res.user.uid)
+    } catch {
+      isLoading = false
+      self.error = error.localizedDescription
+    }
+  }
+
   func startPhone(phone: String) async throws -> String {
     try await PhoneAuthProvider.provider().verifyPhoneNumber(phone, uiDelegate: nil)
   }

@@ -3,13 +3,9 @@ export type AppRole = "USER" | "ADMIN" | "SUPERADMIN";
 export type AppUser = {
   id: string;
   phone?: string | null;
-  email?: string | null;
+  email?: string;
   planTier: "FREE" | "PREMIUM";
   role: AppRole;
-  /** Nom affiché complet (profil). */
-  displayName?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
 };
 
 export function getStoredUser(): AppUser | null {

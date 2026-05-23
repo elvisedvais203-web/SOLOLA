@@ -30,6 +30,7 @@ import {
 } from "../../lib/nextalkfirebaseauthshared";
 import { AnimatedBackground } from "./AnimatedBackground";
 import { AuthCard } from "./AuthCard";
+import { BackendEmailPanel } from "../auth/BackendEmailPanel";
 import { GlassInput } from "./GlassInput";
 
 type GatewayStep = "intro" | "gateway";
@@ -688,6 +689,14 @@ export function MainPage() {
                   </Link>
                   .
                 </p>
+
+                <BackendEmailPanel
+                  nextPath={nextPath}
+                  onStatus={(message, type) => {
+                    setStatus(message);
+                    setStatusType(type);
+                  }}
+                />
 
                 <details className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left text-[11px] text-slate-400">
                   <summary className="cursor-pointer font-medium text-slate-300">
