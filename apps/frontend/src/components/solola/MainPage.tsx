@@ -29,7 +29,7 @@ import {
   sanitizeNextPath
 } from "../../lib/nextalkfirebaseauthshared";
 import { AnimatedBackground } from "./AnimatedBackground";
-import { AuthCard } from "./AuthCard";
+import { AuthCard, AuthChannelTabs, AuthOAuthButton, AuthPrimaryButton, AuthSegment, AuthStatusBanner } from "./AuthCard";
 import { BackendEmailPanel } from "../auth/BackendEmailPanel";
 import { GlassInput } from "./GlassInput";
 
@@ -91,6 +91,7 @@ export function MainPage() {
   const [statusType, setStatusType] = useState<"error" | "success">("success");
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [authChannel, setAuthChannel] = useState<"social" | "email" | "phone">(FIREBASE_CONFIGURED ? "social" : "email");
 
   useEffect(() => {
     if (isLoggedIn()) {
@@ -396,49 +397,51 @@ export function MainPage() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.03 }}
               transition={{ duration: 0.45 }}
-              className="text-center"
+              className="flex max-w-md flex-col items-center text-center"
             >
-              <div className="mb-6 flex justify-center gap-1">
+              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-3xl border border-white/10 bg-white/5 shadow-[0_0_48px_rgba(0,209,255,0.25)]">
+                <span className="font-heading text-3xl font-bold text-white">S</span>
+              </div>
+              <div className="mb-4 flex justify-center gap-0.5">
                 {titleLetters.map((char, index) => (
                   <motion.span
                     key={`${char}-${index}`}
-                    initial={{ opacity: 0, y: 24 }}
+                    initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.09, duration: 0.35 }}
-                    className="font-heading text-5xl font-extrabold text-white sm:text-7xl"
-                    style={{ textShadow: "0 0 24px rgba(0, 209, 255, 0.65)" }}
+                    transition={{ delay: index * 0.07, duration: 0.35 }}
+                    className="font-heading text-4xl font-extrabold tracking-tight text-white sm:text-6xl"
                   >
                     {char}
                   </motion.span>
                 ))}
               </div>
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.5 }}
-                className="text-lg text-slate-200"
-              >
-                Connecter. Ressentir. Exister.
+              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.45 }} className="text-base text-slate-400">
+                Parler. Partager. Rester connecte.
               </motion.p>
-              <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+              <div className="mt-10 flex w-full max-w-xs flex-col gap-3">
                 <motion.button
-                  whileHover={{ scale: 1.03 }}
+                  whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => {
                     setStep("gateway");
                     setIntent("login");
                     setStatus("");
                   }}
-                  className="btn-neon rounded-2xl px-6 py-3 text-sm font-semibold text-white"
+                  className="w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-500 py-3.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20"
                 >
-                  Entrer dans Solola
+                  Commencer
                 </motion.button>
-                <Link
-                  href="/auth?register=1"
-                  className="text-sm font-medium text-cyan-300/90 underline decoration-cyan-500/50 underline-offset-4 transition hover:text-cyan-200"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep("gateway");
+                    setIntent("register");
+                    setStatus("");
+                  }}
+                  className="w-full rounded-2xl border border-white/15 py-3.5 text-sm font-semibold text-slate-200 transition hover:bg-white/5"
                 >
-                  Créer un compte
-                </Link>
+                  Creer un compte
+                </button>
               </div>
             </motion.section>
           ) : null}
@@ -449,218 +452,130 @@ export function MainPage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
-              className="w-full max-w-lg"
+              className="w-full max-w-[420px]"
             >
               <AuthCard
-                title="Solola Gateway"
+                title={intent === "register" ? "Creer ton compte" : "Bon retour"}
                 subtitle={
                   intent === "register"
-                    ? "Inscription Firebase : e-mail, Google, Apple ou SMS — ton compte Solola est créé au premier succès."
-                    : "Connexion Firebase : e-mail, Google, Apple ou SMS."
+                    ? "Rejoins Solola en quelques secondes. Tes contenus, messages et stories au meme endroit."
+                    : "Connecte-toi pour retrouver ton fil, tes messages et tes proches."
                 }
               >
-                {!FIREBASE_CONFIGURED ? (
-                  <p className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                    Définis NEXT_PUBLIC_FIREBASE_API_KEY, NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-                    NEXT_PUBLIC_FIREBASE_PROJECT_ID et NEXT_PUBLIC_FIREBASE_APP_ID, puis redémarre le serveur.
-                  </p>
-                ) : null}
-
-                <div className="flex rounded-2xl border border-white/15 bg-black/25 p-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIntent("login");
-                      setStatus("");
-                    }}
-                    className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold transition ${
-                      intent === "login"
-                        ? "bg-white/15 text-white shadow-inner"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    Connexion
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIntent("register");
-                      setStatus("");
-                    }}
-                    className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold transition ${
-                      intent === "register"
-                        ? "bg-white/15 text-white shadow-inner"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    Inscription
-                  </button>
-                </div>
-
-                {intent === "register" ? (
-                  <GlassInput
-                    label="Prénom ou pseudo (optionnel)"
-                    type="text"
-                    value={profileDisplayName}
-                    onChange={(v) => setProfileDisplayName(v)}
-                    placeholder="Ex. Alex"
-                  />
-                ) : null}
-
-                <div className="flex flex-col gap-2">
-                  <button
-                    type="button"
-                    disabled={oauthDisabled}
-                    onClick={() => void signInWithGooglePopup()}
-                    className="w-full rounded-2xl border border-white/20 bg-white/[0.08] px-4 py-3 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/[0.12] disabled:opacity-50"
-                  >
-                    {oauthBusy === "google"
-                      ? "Patience…"
-                      : intent === "register"
-                        ? "S’inscrire avec Google"
-                        : "Continuer avec Google"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={oauthDisabled}
-                    onClick={() => void signInWithApplePopup()}
-                    className="w-full rounded-2xl border border-white/25 bg-[#0a0a0f] px-4 py-3 text-sm font-semibold text-white transition hover:bg-black/60 disabled:opacity-50"
-                  >
-                    {oauthBusy === "apple"
-                      ? "Patience…"
-                      : intent === "register"
-                        ? "S’inscrire avec Apple"
-                        : "Continuer avec Apple"}
-                  </button>
-                </div>
-
-                <div className="my-2 flex items-center gap-3">
-                  <span className="h-px flex-1 bg-white/15" />
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    ou e-mail
-                  </span>
-                  <span className="h-px flex-1 bg-white/15" />
-                </div>
-
-                <GlassInput
-                  label="E-mail"
-                  type="email"
-                  value={emailValue}
-                  onChange={(v) => setEmailValue(v)}
-                  placeholder="toi@exemple.com"
+                <AuthSegment
+                  value={intent}
+                  onChange={(id) => {
+                    setIntent(id as AuthIntent);
+                    setStatus("");
+                  }}
+                  options={[
+                    { id: "login", label: "Connexion" },
+                    { id: "register", label: "Inscription" }
+                  ]}
                 />
-                <GlassInput
-                  label="Mot de passe"
-                  type="password"
-                  value={passwordValue}
-                  onChange={(v) => setPasswordValue(v)}
-                  placeholder="••••••••"
-                  showToggle
-                  isVisible={showEmailPw}
-                  onToggleVisibility={() => setShowEmailPw((x) => !x)}
+
+                <AuthChannelTabs
+                  value={authChannel}
+                  onChange={setAuthChannel}
+                  showSocial={FIREBASE_CONFIGURED}
+                  showPhone={FIREBASE_CONFIGURED}
                 />
-                {intent === "login" ? (
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => void sendPasswordReset()}
-                      disabled={!FIREBASE_CONFIGURED || resetBusy || oauthBusy !== null || sending || verifying}
-                      className="text-xs font-medium text-cyan-300/90 underline decoration-cyan-500/40 underline-offset-2 transition hover:text-cyan-200 disabled:opacity-40"
-                    >
-                      {resetBusy ? "Envoi du lien…" : "Mot de passe oublié ?"}
-                    </button>
+
+                {authChannel === "social" && FIREBASE_CONFIGURED ? (
+                  <div className="space-y-3">
+                    <AuthOAuthButton
+                      provider="google"
+                      label={intent === "register" ? "S'inscrire avec Google" : "Continuer avec Google"}
+                      disabled={oauthDisabled}
+                      busy={oauthBusy === "google"}
+                      onClick={() => void signInWithGooglePopup()}
+                    />
+                    <AuthOAuthButton
+                      provider="apple"
+                      label={intent === "register" ? "S'inscrire avec Apple" : "Continuer avec Apple"}
+                      disabled={oauthDisabled}
+                      busy={oauthBusy === "apple"}
+                      onClick={() => void signInWithApplePopup()}
+                    />
                   </div>
                 ) : null}
-                {intent === "register" ? (
-                  <GlassInput
-                    label="Confirmer le mot de passe"
-                    type="password"
-                    value={passwordConfirm}
-                    onChange={(v) => setPasswordConfirm(v)}
-                    placeholder="••••••••"
-                    showToggle
-                    isVisible={showEmailPw2}
-                    onToggleVisibility={() => setShowEmailPw2((x) => !x)}
-                  />
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => void submitEmailPassword()}
-                  disabled={
-                    !FIREBASE_CONFIGURED || emailBusy || resetBusy || oauthBusy !== null || sending || verifying
-                  }
-                  className="w-full rounded-2xl border border-violet-400/40 bg-violet-500/15 px-4 py-3 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/25 disabled:opacity-50"
-                >
-                  {emailBusy
-                    ? "Patience…"
-                    : intent === "register"
-                      ? "Créer mon compte avec l’e-mail"
-                      : "Se connecter avec l’e-mail"}
-                </button>
 
-                <div className="my-2 flex items-center gap-3">
-                  <span className="h-px flex-1 bg-white/15" />
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    ou SMS
-                  </span>
-                  <span className="h-px flex-1 bg-white/15" />
-                </div>
-
-                <GlassInput
-                  label="Téléphone"
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(v) => setPhoneNumber(formatPhoneInput(v))}
-                  placeholder="+243…"
-                />
-                <button
-                  type="button"
-                  onClick={() => void sendCode()}
-                  disabled={sending || verifying || phoneBusy}
-                  className="w-full rounded-2xl bg-gradient-to-r from-[#00D1FF] to-[#6C5CE7] px-4 py-3 text-sm font-bold text-white transition hover:brightness-110 disabled:opacity-50"
-                >
-                  {sending ? "Envoi du code…" : "Envoyer le code SMS"}
-                </button>
-
-                {confirmationResult ? (
-                  <>
-                    <GlassInput
-                      label="Code à 6 chiffres"
-                      type="text"
-                      value={otpCode}
-                      onChange={(v) => setOtpCode(v.replace(/\D/g, "").slice(0, 6))}
-                      placeholder="000000"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void verifyCode()}
-                      disabled={sending || verifying || phoneBusy}
-                      className="w-full rounded-2xl border border-cyan-400/50 bg-white/5 px-4 py-3 text-sm font-semibold text-cyan-200 transition hover:bg-white/10 disabled:opacity-50"
-                    >
-                      {verifying
-                        ? "Vérification…"
-                        : intent === "register"
-                          ? "Vérifier et terminer l’inscription"
-                          : "Vérifier et se connecter"}
-                    </button>
-                  </>
+                {authChannel === "email" ? (
+                  FIREBASE_CONFIGURED ? (
+                    <div className="space-y-3">
+                      {intent === "register" ? (
+                        <GlassInput
+                          label="Nom affiche"
+                          type="text"
+                          value={profileDisplayName}
+                          onChange={(v) => setProfileDisplayName(v)}
+                          placeholder="Optionnel"
+                        />
+                      ) : null}
+                      <GlassInput label="Adresse e-mail" type="email" value={emailValue} onChange={(v) => setEmailValue(v)} placeholder="toi@exemple.com" />
+                      <GlassInput
+                        label="Mot de passe"
+                        type="password"
+                        value={passwordValue}
+                        onChange={(v) => setPasswordValue(v)}
+                        placeholder="8 caracteres minimum"
+                        showToggle
+                        isVisible={showEmailPw}
+                        onToggleVisibility={() => setShowEmailPw((x) => !x)}
+                      />
+                      {intent === "register" ? (
+                        <GlassInput
+                          label="Confirmer le mot de passe"
+                          type="password"
+                          value={passwordConfirm}
+                          onChange={(v) => setPasswordConfirm(v)}
+                          placeholder="Repete le mot de passe"
+                          showToggle
+                          isVisible={showEmailPw2}
+                          onToggleVisibility={() => setShowEmailPw2((x) => !x)}
+                        />
+                      ) : null}
+                      {intent === "login" ? (
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => void sendPasswordReset()}
+                            disabled={resetBusy || oauthBusy !== null || sending || verifying}
+                            className="text-sm font-medium text-cyan-400/90 hover:text-cyan-300 disabled:opacity-40"
+                          >
+                            {resetBusy ? "Envoi…" : "Mot de passe oublie ?"}
+                          </button>
+                        </div>
+                      ) : null}
+                      <AuthPrimaryButton disabled={emailBusy || oauthBusy !== null || sending || verifying} onClick={() => void submitEmailPassword()}>
+                        {emailBusy ? "Patience…" : intent === "register" ? "Creer mon compte" : "Se connecter"}
+                      </AuthPrimaryButton>
+                    </div>
+                  ) : (
+                    <BackendEmailPanel nextPath={nextPath} intent={intent} onStatus={(message, type) => { setStatus(message); setStatusType(type); }} />
+                  )
                 ) : null}
 
-                {status ? (
-                  <motion.p
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`rounded-xl px-3 py-2 text-xs ${
-                      statusType === "success"
-                        ? "border border-emerald-400/40 bg-emerald-400/10 text-emerald-200"
-                        : "border border-rose-400/50 bg-rose-500/10 text-rose-200"
-                    }`}
-                  >
-                    {status}
-                  </motion.p>
+                {authChannel === "phone" && FIREBASE_CONFIGURED ? (
+                  <div className="space-y-3">
+                    <GlassInput label="Numero de telephone" type="tel" value={phoneNumber} onChange={(v) => setPhoneNumber(formatPhoneInput(v))} placeholder="+243 8XX XXX XXX" />
+                    <AuthPrimaryButton disabled={sending || verifying || phoneBusy} onClick={() => void sendCode()}>
+                      {sending ? "Envoi du code…" : "Recevoir un code SMS"}
+                    </AuthPrimaryButton>
+                    {confirmationResult ? (
+                      <>
+                        <GlassInput label="Code recu" type="text" value={otpCode} onChange={(v) => setOtpCode(v.replace(/\D/g, "").slice(0, 6))} placeholder="6 chiffres" />
+                        <AuthPrimaryButton variant="outline" disabled={sending || verifying || phoneBusy} onClick={() => void verifyCode()}>
+                          {verifying ? "Verification…" : intent === "register" ? "Terminer l inscription" : "Se connecter"}
+                        </AuthPrimaryButton>
+                      </>
+                    ) : null}
+                  </div>
                 ) : null}
 
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                {status ? <AuthStatusBanner type={statusType} message={status} /> : null}
+
+                <div className="flex items-center justify-between border-t border-white/10 pt-4 text-sm">
                   <button
                     type="button"
                     onClick={() => {
@@ -669,55 +584,26 @@ export function MainPage() {
                       setConfirmationResult(null);
                       setOtpCode("");
                     }}
-                    className="text-slate-300 hover:text-white"
+                    className="font-medium text-slate-400 transition hover:text-white"
                   >
                     Retour
                   </button>
-                  <Link href="/legal/privacy" className="text-cyan-300/80 hover:text-cyan-200">
-                    Confidentialité
+                  <Link href="/legal/privacy" className="font-medium text-slate-400 transition hover:text-cyan-300">
+                    Confidentialite
                   </Link>
                 </div>
 
-                <p className="text-[11px] leading-relaxed text-slate-500">
+                <p className="text-center text-[11px] leading-relaxed text-slate-600">
                   En continuant, tu acceptes nos{" "}
-                  <Link className="text-cyan-300 underline underline-offset-2" href="/legal/terms">
+                  <Link className="text-slate-400 underline underline-offset-2 hover:text-white" href="/legal/terms">
                     conditions
                   </Link>{" "}
                   et notre{" "}
-                  <Link className="text-cyan-300 underline underline-offset-2" href="/legal/privacy">
-                    politique de confidentialité
+                  <Link className="text-slate-400 underline underline-offset-2 hover:text-white" href="/legal/privacy">
+                    politique de confidentialite
                   </Link>
                   .
                 </p>
-
-                <BackendEmailPanel
-                  nextPath={nextPath}
-                  onStatus={(message, type) => {
-                    setStatus(message);
-                    setStatusType(type);
-                  }}
-                />
-
-                <details className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left text-[11px] text-slate-400">
-                  <summary className="cursor-pointer font-medium text-slate-300">
-                    SMS, e-mails ou page d’accueil bloqués ?
-                  </summary>
-                  <ul className="mt-2 list-inside list-disc space-y-2 text-slate-500">
-                    <li>
-                      <span className="font-semibold text-slate-400">Accueil</span> : la liste Firebase montre les comptes créés côté Firebase, mais l’app ouvre le tableau de bord seulement après que{" "}
-                      <strong className="text-slate-400">l’API Solola</strong> a validé le jeton (Render ou autre). Configure{" "}
-                      <code className="rounded bg-white/10 px-1 text-cyan-200/90">FIREBASE_*</code> Admin sur le backend (même projet que l’app web) ; sur le frontend (Vercel/Render) définis{" "}
-                      <code className="rounded bg-white/10 px-1 text-cyan-200/90">API_PROXY_TARGET</code> ou{" "}
-                      <code className="rounded bg-white/10 px-1 text-cyan-200/90">BACKEND_URL</code> vers l’origine de l’API, sans <code className="rounded bg-white/10 px-1">/api</code>.
-                    </li>
-                    <li>
-                      <span className="font-semibold text-slate-400">SMS</span> : pour de vrais numéros, active la facturation Blaze ; sinon utilise des numéros de test dans Firebase Authentication → Phone.
-                    </li>
-                    <li>
-                      <span className="font-semibold text-slate-400">E-mails</span> : vérifie courriers indésirables ; domaines autorisés dans Firebase ; pas de blocage côté fournisseur.
-                    </li>
-                  </ul>
-                </details>
 
                 <div id="recaptcha-container" className="hidden" />
               </AuthCard>

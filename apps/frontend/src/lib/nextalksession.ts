@@ -4,6 +4,8 @@ export type AppUser = {
   id: string;
   phone?: string | null;
   email?: string;
+  displayName?: string | null;
+  firstName?: string | null;
   planTier: "FREE" | "PREMIUM";
   role: AppRole;
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { IconLock, IconMail, IconPhone, IconUser } from "./auth-icons";
 
 type GlassInputProps = {
   label: string;
@@ -13,6 +14,14 @@ type GlassInputProps = {
   isVisible?: boolean;
   onToggleVisibility?: () => void;
 };
+
+function FieldIcon({ type }: { type: GlassInputProps["type"] }) {
+  const cls = "h-[18px] w-[18px] shrink-0 text-slate-500";
+  if (type === "email") return <IconMail className={cls} />;
+  if (type === "password") return <IconLock className={cls} />;
+  if (type === "tel") return <IconPhone className={cls} />;
+  return <IconUser className={cls} />;
+}
 
 export function GlassInput({
   label,
@@ -30,35 +39,34 @@ export function GlassInput({
 
   return (
     <div>
-      <label className="mb-1 block text-xs uppercase tracking-[0.18em] text-slate-300">{label}</label>
+      <label className="mb-1.5 block text-[13px] font-medium text-slate-300">{label}</label>
       <motion.div
-        animate={hasError ? { x: [0, -6, 6, -4, 4, 0] } : { x: 0 }}
-        transition={{ duration: 0.25 }}
-        className={`flex items-center gap-2 rounded-2xl border bg-white/[0.04] px-3 py-3 backdrop-blur-lg transition ${
-          hasError ? "border-rose-400/70" : "border-white/15 focus-within:border-cyan-300/70"
+        animate={hasError ? { x: [0, -4, 4, 0] } : { x: 0 }}
+        transition={{ duration: 0.2 }}
+        className={`flex items-center gap-3 rounded-2xl border bg-[#0a0f1a]/80 px-4 py-3.5 transition focus-within:border-cyan-400/50 focus-within:ring-2 focus-within:ring-cyan-400/15 ${
+          hasError ? "border-rose-400/60" : "border-white/10"
         }`}
       >
-        <span className="text-slate-300">
-          {type === "email" ? "@" : type === "password" ? "•" : type === "tel" ? "☎" : "◇"}
-        </span>
+        <FieldIcon type={type} />
         <input
           type={computedType}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
-          className="w-full bg-transparent text-sm text-white placeholder:text-slate-500 focus:outline-none"
+          className="w-full bg-transparent text-[15px] text-white placeholder:text-slate-600 focus:outline-none"
+          autoComplete={type === "email" ? "email" : type === "password" ? "current-password" : type === "tel" ? "tel" : "name"}
         />
         {showToggle ? (
           <button
             type="button"
             onClick={onToggleVisibility}
-            className="rounded-lg px-2 py-1 text-xs text-cyan-300 transition hover:bg-white/10"
+            className="shrink-0 text-xs font-medium text-slate-400 transition hover:text-white"
           >
-            {isVisible ? "Masquer" : "Voir"}
+            {isVisible ? "Masquer" : "Afficher"}
           </button>
         ) : null}
       </motion.div>
-      {error ? <p className="mt-1 text-xs text-rose-300">{error}</p> : null}
+      {error ? <p className="mt-1.5 text-xs text-rose-300">{error}</p> : null}
     </div>
   );
 }
