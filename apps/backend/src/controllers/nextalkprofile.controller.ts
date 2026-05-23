@@ -53,6 +53,10 @@ export async function myProfile(req: AuthRequest, res: Response) {
 
   res.json({
     ...profile,
+    settings: profile?.user?.settings ?? null,
+    planTier: profile?.user?.planTier ?? "FREE",
+    email: profile?.user?.email ?? null,
+    phone: profile?.user?.phone ?? null,
     followersCount: profile?.user?.followers?.length ?? 0,
     followingCount: profile?.user?.following?.length ?? 0,
     verificationStatus,

@@ -1,8 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AuthGuard } from "../../components/nextalkauthguard";
+import { SololaPlanBadge } from "../../components/sololaplanbadge";
+import { useSololaPlan } from "../../hooks/useSololaPlan";
+import { logoutSession } from "../../lib/nextalksession";
+import { hasPrivilege } from "../../lib/sololaplan";
+import { fetchCsrfToken } from "../../services/nextalksecurity";
+import { getMyProfile, updateProfileSettings } from "../../services/nextalkprofile";
 
 type RowType = "toggle" | "link" | "value";
 type Row = {
@@ -78,7 +86,7 @@ const SETTINGS_SECTIONS: Section[] = [
     { id: "bluetooth", icon: "🛰️", title: "Connexion accessoires", description: "Audio et périphériques", type: "link" }
   ]},
   { id: "billing", title: "Facturation / abonnement", rows: [
-    { id: "plan", icon: "💳", title: "Plan actuel", description: "Solola Pro Mensuel", type: "value", value: "Actif" },
+    { id: "plan", icon: "💳", title: "Abonnement (Free / Standard / Pro)", description: "Privileges Telegram + Instagram", type: "link" },
     { id: "payment", icon: "🏦", title: "Moyens de paiement", description: "Carte et mobile money", type: "link" },
     { id: "invoices", icon: "🧾", title: "Factures", description: "Historique de paiement", type: "link" }
   ]},
@@ -117,8 +125,11 @@ function IOSSwitch({ checked, onChange }: { checked: boolean; onChange: (value: 
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const { plan } = useSololaPlan();
   const [query, setQuery] = useState("");
-  const [feedback, setFeedback] = useState("Tous les paramètres sont synchronisés localement.");
+  const [feedback, setFeedback] = useState("Chargement des parametres...");
+  const [accountEmail, setAccountEmail] = useState("");
   const [toggles, setToggles] = useState<Record<string, boolean>>({
     darkMode: true,
     pushNotifications: true,
@@ -143,6 +154,51 @@ export default function SettingsPage() {
     debugUI: false
   });
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        const profile = await getMyProfile();
+        const s = profile?.settings;
+        setAccountEmail(String(profile?.email ?? ""));
+        if (s) {
+          setToggles((prev) => ({
+            ...prev,
+            darkMode: String(s.theme ?? "DARK").toUpperCase() === "DARK",
+            readReceipts: Boolean(s.readReceipts),
+            showOnline: !Boolean(s.hideOnlineStatus),
+            privateAccount: String(s.profileVisibility ?? "VISIBLE") === "HIDDEN",
+            pushNotifications: Boolean(s.notifMessages) && Boolean(s.notifLikes),
+            cloudBackup: Boolean(s.autoSaveMedia)
+          }));
+        }
+        setFeedback("Parametres synchronises avec ton compte.");
+      } catch {
+        setFeedback("Mode hors ligne : reglages locaux uniquement.");
+      }
+    })();
+  }, []);
+
+  const persistSettings = async (patch: Record<string, boolean>, title: string) => {
+    try {
+      const csrf = await fetchCsrfToken();
+      await updateProfileSettings(
+        {
+          theme: patch.darkMode === false ? "light" : "dark",
+          readReceipts: patch.readReceipts,
+          hideOnlineStatus: patch.showOnline === false,
+          profileVisibility: patch.privateAccount ? "HIDDEN" : "VISIBLE",
+          notifMessages: patch.pushNotifications,
+          notifLikes: patch.pushNotifications,
+          autoSaveMedia: patch.cloudBackup
+        },
+        csrf
+      );
+      setFeedback(`${title} enregistre sur le serveur.`);
+    } catch {
+      setFeedback(`${title} sauvegarde localement (sync serveur indisponible).`);
+    }
+  };
+
   const filteredSections = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return SETTINGS_SECTIONS;
@@ -157,16 +213,54 @@ export default function SettingsPage() {
   }, [query]);
 
   const updateToggle = (key: string, value: boolean, title: string) => {
-    setToggles((prev) => ({ ...prev, [key]: value }));
-    setFeedback(`${title} ${value ? "activé" : "désactivé"} avec succès.`);
+    const lockedKeys: Record<string, string> = {
+      secureMessaging: "e2e",
+      cloudBackup: "cloud",
+      twoFactor: "2fa"
+    };
+    const privilege = lockedKeys[key];
+    if (privilege && !hasPrivilege(plan, privilege)) {
+      setFeedback(`${title} necessite un plan Standard ou Pro.`);
+      return;
+    }
+
+    setToggles((prev) => {
+      const next = { ...prev, [key]: value };
+      void persistSettings(next, title);
+      return next;
+    });
+    setFeedback(`${title} ${value ? "active" : "desactive"}.`);
+  };
+
+  const openRow = (row: Row) => {
+    if (row.id === "plan") {
+      router.push("/settings/plan");
+      return;
+    }
+    if (row.id === "logout") {
+      logoutSession();
+      router.push("/auth");
+      return;
+    }
+    if (row.id === "profil") {
+      router.push("/profile");
+      return;
+    }
+    setFeedback(`Navigation : ${row.title}`);
   };
 
   return (
     <AuthGuard>
       <section className="mx-auto max-w-5xl pb-10">
-        <div className="mb-4">
-          <h1 className="font-heading text-3xl font-bold text-white">Paramètres</h1>
-          <p className="mt-1 text-sm text-slate-400">Configuration complète de ton expérience Solola.</p>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="font-heading text-3xl font-bold text-white">Parametres</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Style Telegram : confidentialite, notifications, securite, donnees.
+            </p>
+            {accountEmail ? <p className="mt-1 text-xs text-slate-500">{accountEmail}</p> : null}
+          </div>
+          <SololaPlanBadge />
         </div>
 
         <div className="glass mb-4 rounded-2xl p-3">
@@ -201,15 +295,21 @@ export default function SettingsPage() {
                       <IOSSwitch checked={Boolean(toggles[row.keyName])} onChange={(value) => updateToggle(row.keyName!, value, row.title)} />
                     ) : null}
                     {row.type === "value" ? <span className="text-xs text-slate-300">{row.value}</span> : null}
-                    {row.type !== "toggle" ? (
-                      <button
-                        type="button"
-                        onClick={() => setFeedback(`Navigation ouverte : ${row.title}`)}
-                        className="rounded-lg px-2 py-1 text-slate-400 transition hover:bg-white/10 hover:text-white"
-                        aria-label={`Ouvrir ${row.title}`}
-                      >
-                        ›
-                      </button>
+                    {row.type === "link" ? (
+                      row.id === "plan" ? (
+                        <Link href="/settings/plan" className="rounded-lg px-2 py-1 text-slate-400 hover:bg-white/10 hover:text-white">
+                          ›
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openRow(row)}
+                          className="rounded-lg px-2 py-1 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                          aria-label={`Ouvrir ${row.title}`}
+                        >
+                          ›
+                        </button>
+                      )
                     ) : null}
                   </div>
                 ))}

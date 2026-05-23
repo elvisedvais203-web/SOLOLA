@@ -4,14 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { canAccessAdmin, getStoredUser } from "../lib/nextalksession";
-import { SololaThemedLogo } from "./sololathemedlogo";
+import { SololaCreateModal, type CreateKind } from "./sololacreatemodal";
 
 const baseLinks = [
   { href: "/", label: "Accueil", icon: "home" },
   { href: "#create", label: "+", icon: "plus" },
   { href: "/reels", label: "Reels", icon: "reels" },
-  { href: "/search", label: "Recherche", icon: "search" },
-  { href: "/messages", label: "Messages", icon: "message" }
+  { href: "/search", label: "Explorer", icon: "search" },
+  { href: "/messages", label: "Messages", icon: "message" },
+  { href: "/settings", label: "Profil", icon: "profile" }
 ];
 
 function NavIcon({ icon, active }: { icon: string; active: boolean }) {
@@ -84,7 +85,9 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
 export function MobileNav() {
   const pathname = usePathname();
   const [showAdmin, setShowAdmin] = useState(false);
-  const [openCreate, setOpenCreate] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [createKind, setCreateKind] = useState<CreateKind>("post");
 
   useEffect(() => {
     const user = getStoredUser();
@@ -100,10 +103,7 @@ export function MobileNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-[#08101ff2] px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl md:hidden">
-      <div className="mb-1 flex items-center justify-center">
-        <SololaThemedLogo width={22} height={22} className="rounded-md opacity-85" />
-      </div>
-      <ul className={`mx-auto grid max-w-xl gap-1 text-center ${links.length > 5 ? "grid-cols-6" : "grid-cols-5"}`}>
+      <ul className={`mx-auto grid max-w-xl gap-1 text-center grid-cols-6`}>
         {links.map((link) => {
           const isCreate = link.icon === "plus";
           const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
@@ -112,11 +112,13 @@ export function MobileNav() {
               {isCreate ? (
                 <button
                   type="button"
-                  onClick={() => setOpenCreate(true)}
-                  className="relative flex w-full flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-slate-100 transition-all duration-200 hover:bg-white/5"
+                  onClick={() => setPickerOpen(true)}
+                  className="relative -mt-3 flex w-full flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-slate-100"
                   aria-label="Creer"
                 >
-                  <NavIcon icon={link.icon} active={true} />
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#ff3cac] via-neoblue to-neoviolet shadow-lg shadow-neoblue/30">
+                    <NavIcon icon={link.icon} active={true} />
+                  </span>
                   <span className="text-[10px] leading-none font-medium">Creer</span>
                 </button>
               ) : (
@@ -138,21 +140,33 @@ export function MobileNav() {
           );
         })}
       </ul>
-      {openCreate ? (
-        <div className="fixed inset-0 z-[70] flex items-end bg-black/60" onClick={() => setOpenCreate(false)}>
+      {pickerOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-end bg-black/60" onClick={() => setPickerOpen(false)}>
           <div
             className="w-full rounded-t-3xl border border-white/10 bg-[#08101f] p-4"
             onClick={(e) => e.stopPropagation()}
           >
             <p className="mb-3 text-sm font-semibold text-white">Creer</p>
             <div className="grid grid-cols-3 gap-2">
-              <Link href="/stories" onClick={() => setOpenCreate(false)} className="glass rounded-2xl px-3 py-3 text-center text-sm text-slate-100">Story</Link>
-              <Link href="/reels" onClick={() => setOpenCreate(false)} className="glass rounded-2xl px-3 py-3 text-center text-sm text-slate-100">Reel</Link>
-              <Link href="/" onClick={() => setOpenCreate(false)} className="glass rounded-2xl px-3 py-3 text-center text-sm text-slate-100">Post</Link>
+              {(["story", "reel", "post"] as CreateKind[]).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => {
+                    setCreateKind(k);
+                    setPickerOpen(false);
+                    setModalOpen(true);
+                  }}
+                  className="glass rounded-2xl px-3 py-3 text-center text-sm text-slate-100"
+                >
+                  {k === "story" ? "Story" : k === "reel" ? "Reel" : "Post"}
+                </button>
+              ))}
             </div>
           </div>
         </div>
       ) : null}
+      <SololaCreateModal open={modalOpen} initialKind={createKind} onClose={() => setModalOpen(false)} />
     </nav>
   );
 }

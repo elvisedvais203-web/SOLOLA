@@ -6,7 +6,9 @@ import { globalSearch, type GlobalSearchResult } from "../../services/nextalksea
 import { getSuggestions } from "../../services/nextalksocial";
 import { getStoryFeed } from "../../services/nextalkstories";
 import { AuthGuard } from "../../components/nextalkauthguard";
+import { ExploreGridSkeleton } from "../../components/sololaskeleton";
 import { SectionHeader } from "../../components/nextalksectionheader";
+import { getFeed } from "../../services/nextalksocial";
 
 type RecentSearch = { q: string; ts: number };
 
@@ -47,6 +49,8 @@ export default function SearchPage() {
   const [result, setResult] = useState<GlobalSearchResult | null>(null);
   const [popularPeople, setPopularPeople] = useState<any[]>([]);
   const [popularVideos, setPopularVideos] = useState<any[]>([]);
+  const [exploreGrid, setExploreGrid] = useState<{ id: string; mediaUrl: string; isVideo: boolean }[]>([]);
+  const [exploreLoading, setExploreLoading] = useState(true);
   const [recent, setRecent] = useState<RecentSearch[]>([]);
 
   useEffect(() => {
@@ -62,6 +66,25 @@ export default function SearchPage() {
         setPopularVideos(list.slice(0, 12));
       })
       .catch(() => setPopularVideos([]));
+
+    Promise.all([getFeed(30), getStoryFeed()])
+      .then(([feedRows, storyRows]) => {
+        const fromFeed = (feedRows ?? [])
+          .filter((p: any) => p?.mediaUrl)
+          .map((p: any) => ({
+            id: `post-${p.id}`,
+            mediaUrl: p.mediaUrl,
+            isVideo: /\.(mp4|webm|ogg)(\?|$)/i.test(String(p.mediaUrl))
+          }));
+        const fromStories = (storyRows ?? []).map((s: any) => ({
+          id: `story-${s.id}`,
+          mediaUrl: s.mediaUrl,
+          isVideo: String(s.mediaType ?? "").toUpperCase() === "VIDEO"
+        }));
+        setExploreGrid([...fromFeed, ...fromStories].slice(0, 30));
+      })
+      .catch(() => setExploreGrid([]))
+      .finally(() => setExploreLoading(false));
   }, []);
 
   useEffect(() => {
@@ -202,6 +225,35 @@ export default function SearchPage() {
             </div>
           </div>
         ) : (
+          <>
+          <div className="glass mt-4 rounded-3xl p-3">
+            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-400">Explorer (grille Instagram)</p>
+            {exploreLoading ? <ExploreGridSkeleton /> : null}
+            {!exploreLoading && exploreGrid.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-400">Aucun contenu a explorer pour le moment.</p>
+            ) : null}
+            {!exploreLoading && exploreGrid.length > 0 ? (
+              <div className="grid grid-cols-3 gap-0.5">
+                {exploreGrid.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={item.isVideo ? "/reels" : "/"}
+                    className="relative aspect-square overflow-hidden bg-black/30"
+                  >
+                    {item.isVideo ? (
+                      <video src={item.mediaUrl} className="h-full w-full object-cover" muted playsInline />
+                    ) : (
+                      <img src={item.mediaUrl} alt="" className="h-full w-full object-cover" />
+                    )}
+                    {item.isVideo ? (
+                      <span className="absolute right-1 top-1 rounded bg-black/60 px-1 text-[10px] text-white">▶</span>
+                    ) : null}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <div className="glass rounded-3xl p-4">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Personnes populaires</p>
@@ -250,6 +302,7 @@ export default function SearchPage() {
               </p>
             </div>
           </div>
+          </>
         )}
       </section>
     </AuthGuard>
