@@ -1,6 +1,11 @@
+import { copyFile, mkdir } from "node:fs/promises";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { v2 as cloudinary } from "cloudinary";
 import { env } from "../config/nextalkenv";
 import { ApiError } from "../utils/nextalkapierror";
+
+const UPLOAD_ROOT = path.join(process.cwd(), "storage", "uploads");
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -18,21 +23,40 @@ function assertCloudinaryConfigured(): { cloudName: string; apiKey: string; apiS
   return { cloudName, apiKey, apiSecret };
 }
 
-export async function uploadMedia(filePath: string, folder: string): Promise<string> {
-  if (env.mediaProvider !== "cloudinary") {
-    if (env.nodeEnv === "production") {
-      throw new ApiError(503, "Stockage media non configure. Contactez l'administrateur.");
+async function persistLocalUpload(filePath: string, folder: string, publicBaseUrl?: string): Promise<string> {
+  const ext = path.extname(filePath) || ".bin";
+  const fileName = `${randomUUID()}${ext}`;
+  const destDir = path.join(UPLOAD_ROOT, folder);
+  await mkdir(destDir, { recursive: true });
+  await copyFile(filePath, path.join(destDir, fileName));
+
+  const relative = `/api/media/files/${folder}/${fileName}`;
+  const base = String(publicBaseUrl ?? process.env.MEDIA_PUBLIC_BASE_URL ?? "").replace(/\/+$/, "");
+  if (base) {
+    return `${base}${relative}`;
+  }
+  return relative;
+}
+
+export async function uploadMedia(filePath: string, folder: string, options?: { publicBaseUrl?: string }): Promise<string> {
+  const useCloudinary = env.mediaProvider === "cloudinary";
+
+  if (useCloudinary) {
+    try {
+      assertCloudinaryConfigured();
+      const uploaded = await cloudinary.uploader.upload(filePath, {
+        folder,
+        resource_type: "auto"
+      });
+      return uploaded.secure_url;
+    } catch (error) {
+      if (env.nodeEnv === "production") {
+        throw error instanceof ApiError ? error : new ApiError(503, "Echec upload Cloudinary.");
+      }
     }
-    return `http://localhost/mock-media/${folder}/${Date.now()}`;
   }
 
-  assertCloudinaryConfigured();
-
-  const uploaded = await cloudinary.uploader.upload(filePath, {
-    folder,
-    resource_type: "auto"
-  });
-  return uploaded.secure_url;
+  return persistLocalUpload(filePath, folder, options?.publicBaseUrl);
 }
 
 export function createSignedUploadPayload(params: {

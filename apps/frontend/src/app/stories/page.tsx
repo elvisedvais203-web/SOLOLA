@@ -3,13 +3,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthGuard } from "../../components/nextalkauthguard";
-import { createStory, getStoryFeed, viewStory } from "../../services/nextalkstories";
+import { publishStoryWithMedia, formatPublishError } from "../../services/nextalkpublish";
+import { getStoryFeed, viewStory } from "../../services/nextalkstories";
 import { fetchCsrfToken } from "../../services/nextalksecurity";
-import { getStoredUser } from "../../lib/nextalksession";
+import { getStoredUser, isLoggedIn } from "../../lib/nextalksession";
 import { broadcastToChannel, createChannel, getConversations, subscribeToChannel, type Conversation } from "../../services/nextalkchat";
 import Image from "next/image";
-import api from "../../lib/nextalkapi";
 import { SectionHeader } from "../../components/nextalksectionheader";
+
+function isAllowedStoryFile(file: File): boolean {
+  const t = String(file.type || "").toLowerCase();
+  if (["image/jpeg", "image/png", "image/webp", "image/heic", "video/mp4", "video/quicktime", "video/webm"].includes(t)) {
+    return true;
+  }
+  return /\.(jpe?g|png|webp|heic|mp4|mov|webm)$/i.test(file.name);
+}
 
 type Story = {
   id: string;
@@ -152,42 +160,33 @@ export default function StoriesPage() {
   };
 
   const publishStory = async (file: File) => {
+    if (!isLoggedIn()) {
+      setPublishStatus("Connecte-toi pour publier une story.");
+      router.push("/auth?next=/stories");
+      return;
+    }
     try {
       setPublishing(true);
       setPublishStatus("Envoi en cours...");
-      if (!["image/jpeg", "image/png", "image/webp", "image/heic", "video/mp4", "video/quicktime", "video/webm"].includes(file.type)) {
+      if (!isAllowedStoryFile(file)) {
         setPublishStatus("Format non supporte. Utilisez JPEG, PNG, WEBP, HEIC, MP4, MOV ou WEBM.");
         return;
       }
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("folder", "stories");
-      const csrf = await fetchCsrfToken();
-      const { data: upload } = await api.post("/media/upload", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          "x-csrf-token": csrf
-        },
-        onUploadProgress: (evt) => {
-          const total = evt.total ?? 0;
-          if (total > 0) {
-            setPublishProgress(Math.round((evt.loaded / total) * 100));
-          }
-        }
-      });
-      await createStory({
-        mediaUrl: upload.url ?? upload.secure_url ?? upload.mediaUrl,
-        mediaType: file.type.startsWith("video") ? "VIDEO" : "IMAGE",
+      await publishStoryWithMedia({
+        mediaFile: file,
         caption,
-        visibility: storyVisibility
-      }, csrf);
+        visibility: storyVisibility,
+        onUploadProgress: setPublishProgress
+      });
       setCaption("");
+      setComposeOpen(false);
+      setComposeFile(null);
+      setComposePreviewUrl("");
       setPublishStatus("Story publiee.");
       setPublishProgress(0);
       await loadFeed();
-    } catch (error: any) {
-      const message = String(error?.response?.data?.message ?? "");
-      setPublishStatus(message ? `Échec de publication: ${message}` : "Échec de publication: serveur indisponible.");
+    } catch (error: unknown) {
+      setPublishStatus(`Echec de publication: ${formatPublishError(error)}`);
     } finally {
       setPublishing(false);
       setPublishProgress(0);

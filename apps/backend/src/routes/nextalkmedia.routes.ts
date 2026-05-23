@@ -1,40 +1,51 @@
 import { Router } from "express";
 import multer from "multer";
+import path from "node:path";
 import { unlink } from "node:fs/promises";
+import express from "express";
 import { authGuard, AuthRequest } from "../middleware/nextalkauth";
 import { csrfGuard } from "../middleware/nextalkcsrf";
 import { createSignedUploadPayload, uploadMedia } from "../services/nextalkmedia.service";
 import { ApiError } from "../utils/nextalkapierror";
 
-const router = Router();
+const UPLOAD_ROOT = path.join(process.cwd(), "storage", "uploads");
+
+const allowedMime = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "audio/webm",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/aac",
+  "audio/ogg",
+  "audio/wav"
+]);
+
+const allowedExt = new Set([".jpg", ".jpeg", ".png", ".webp", ".heic", ".mp4", ".mov", ".webm", ".m4a", ".mp3", ".aac", ".ogg", ".wav"]);
+
 const upload = multer({
   dest: "tmp/uploads",
   limits: { fileSize: 120 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = new Set([
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/heic",
-      "video/mp4",
-      "video/quicktime",
-      "video/webm",
-      "audio/webm",
-      "audio/mpeg",
-      "audio/mp4",
-      "audio/aac",
-      "audio/ogg",
-      "audio/wav"
-    ]);
-    if (!allowed.has(file.mimetype)) {
-      cb(new ApiError(400, "Format fichier non supporte. Utilisez image/video/audio standards (jpg/png/webp/heic/mp4/mov/webm/mp3/m4a/aac/ogg/wav)."));
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedMime.has(file.mimetype) || allowedExt.has(ext)) {
+      cb(null, true);
       return;
     }
-    cb(null, true);
+    cb(new ApiError(400, "Format fichier non supporte. Utilisez image/video/audio standards (jpg/png/webp/heic/mp4/mov/webm/mp3/m4a/aac/ogg/wav)."));
   }
 });
 
 const allowedFolders = new Set(["messages", "profiles", "stories", "posts", "reels"]);
+
+const router = Router();
+
+router.use("/files", express.static(UPLOAD_ROOT, { maxAge: "7d", fallthrough: false }));
 
 router.post("/upload/sign", authGuard, csrfGuard, (req: AuthRequest, res, next) => {
   try {
@@ -64,7 +75,10 @@ router.post("/upload", authGuard, csrfGuard, upload.single("file"), async (req: 
   }
 
   try {
-    const url = await uploadMedia(file.path, folder);
+    const proto = req.get("x-forwarded-proto") ?? req.protocol;
+    const host = req.get("x-forwarded-host") ?? req.get("host");
+    const publicBaseUrl = host ? `${proto}://${host}` : undefined;
+    const url = await uploadMedia(file.path, folder, { publicBaseUrl });
     res.status(201).json({
       ok: true,
       url,

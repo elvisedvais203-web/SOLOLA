@@ -25,7 +25,7 @@ export function resolveAxiosApiBaseUrl(): string {
   if (typeof window !== "undefined") {
     const { hostname } = window.location;
     if (hostname === "localhost" || hostname === "127.0.0.1") {
-      return "http://localhost:4000/api";
+      return "/api";
     }
     return "/api";
   }

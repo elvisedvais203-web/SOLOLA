@@ -6,6 +6,25 @@ import { createStory } from "./nextalkstories";
 
 type UploadResult = { url: string; fileName: string };
 
+function isVideoFile(file: File): boolean {
+  const t = String(file.type || "").toLowerCase();
+  if (t.startsWith("video/")) return true;
+  return /\.(mp4|webm|mov)$/i.test(file.name);
+}
+
+function formatUploadError(error: unknown): string {
+  const e = error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+  const status = e?.response?.status;
+  const msg = e?.response?.data?.message ?? e?.message ?? "";
+  if (status === 401) return "Session expiree. Reconnecte-toi.";
+  if (status === 503 && /media|cloudinary|stockage/i.test(String(msg))) {
+    return "Stockage media indisponible sur le serveur. L admin doit configurer Cloudinary ou redeployer l API.";
+  }
+  if (status === 400) return String(msg) || "Fichier refuse par le serveur.";
+  if (status === 413) return "Fichier trop volumineux (max 120 Mo).";
+  return msg ? String(msg) : "Upload impossible. Verifie ta connexion.";
+}
+
 function guessMessageType(file: File): ChatMessageType {
   const t = String(file.type || "").toLowerCase();
   if (t.startsWith("image/")) return "IMAGE";
@@ -59,6 +78,13 @@ export async function uploadMediaWithRetry(
   return { url, fileName: file.name };
 }
 
+export function formatPublishError(error: unknown): string {
+  if (error instanceof Error && error.message === "upload_missing_url") {
+    return "Le serveur n a pas renvoye d URL media.";
+  }
+  return formatUploadError(error);
+}
+
 export async function publishFeedWithOptionalMedia(input: {
   content?: string;
   mediaFile?: File | null;
@@ -87,7 +113,7 @@ export async function publishStoryWithMedia(input: {
     createStory(
       {
         mediaUrl: uploaded.url,
-        mediaType: input.mediaFile.type.startsWith("video/") ? "VIDEO" : "IMAGE",
+        mediaType: isVideoFile(input.mediaFile) ? "VIDEO" : "IMAGE",
         caption: input.caption,
         visibility: input.visibility ?? "PUBLIC"
       },

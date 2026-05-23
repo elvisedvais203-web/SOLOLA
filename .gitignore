@@ -15,4 +15,6 @@ apps/frontend/public/workbox-*.js
 packages/shared/node_modules/
 tools/render-cli/*.exe
 tools/render-cli/*.zip
+storage/
+apps/backend/storage/
 mobile/android/NextalkMobileAndroid/.gradle/
